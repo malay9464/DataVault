@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Preview Data</title>
+    <style>
+        body {
+            font-family:"Segoe UI";
+            background:#f4f6f8;
+            margin:0;
+        }
+
+        .container {
+            width:95%;
+            margin:30px auto;
+            background:white;
+            padding:24px;
+            border-radius:14px;
+        }
+
+        h2 { margin-top:0; }
+
+        .controls {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:14px;
+        }
+
+        select, button {
+            padding:7px 12px;
+            border-radius:6px;
+            border:1px solid #ccc;
+        }
+
+        button {
+            background:#2563eb;
+            color:white;
+            cursor:pointer;
+        }
+
+        .table-wrapper {
+            overflow-x:auto;
+            max-height:70vh;
+        }
+
+        table {
+            width:100%;
+            min-width:1200px;
+            border-collapse:collapse;
+        }
+
+        th, td {
+            padding:9px;
+            border-bottom:1px solid #e5e7eb;
+            white-space:nowrap;
+        }
+
+        th {
+            background:#2563eb;
+            color:white;
+            position:sticky;
+            top:0;
+            z-index:10;
+        }
+
+        tr:hover td {
+            background:#f1f5f9;
+        }
+
+        .pagination {
+            margin-top:18px;
+            display:flex;
+            gap:6px;
+            flex-wrap:wrap;
+            justify-content:center;
+        }
+
+        .pagination button {
+            background:white;
+            color:#111;
+            border:1px solid #ccc;
+        }
+
+        .pagination button.active {
+            background:#2563eb;
+            color:white;
+            font-weight:bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>Uploaded Data</h2>
+
+    <div class="controls">
+        <div>
+            Show
+            <select id="pageSize">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+            </select>
+            rows
+        </div>
+
+        <button onclick="exportData()">Export CSV</button>
+    </div>
+
+    <div class="table-wrapper">
+        <table id="dataTable"></table>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+/* ---------- AUTH ---------- */
+const token = localStorage.getItem("access_token");
+
+if (!token) {
+    window.location.href = "/static/login.html";
+}
+
+function authFetch(url) {
+    return fetch(url, {
+        headers: {
+            "Authorization": `Bearer ${token}`
+        }
+    });
+}
+
+/* ---------- PARAMS ---------- */
+const params = new URLSearchParams(window.location.search);
+const uploadId = params.get("upload_id");
+
+let page = 1;
+let pageSize = 50;
+let totalRecords = 0;
+
+/* ---------- PAGE SIZE ---------- */
+document.getElementById("pageSize").onchange = e => {
+    pageSize = parseInt(e.target.value);
+    page = 1;
+    loadData();
+};
+
+/* ---------- LOAD DATA ---------- */
+async function loadData() {
+    const res = await authFetch(
+        `/preview?upload_id=${uploadId}&page=${page}&page_size=${pageSize}`
+    );
+
+    if (!res.ok) {
+        alert("Unauthorized or data not found");
+        return;
+    }
+
+    const data = await res.json();
+    totalRecords = data.total_records;
+
+    renderTable(data);
+    renderPagination(Math.ceil(totalRecords / pageSize));
+}
+
+/* ---------- TABLE ---------- */
+function renderTable(data) {
+    const table = document.getElementById("dataTable");
+    table.innerHTML = "";
+
+    if (!data.rows || data.rows.length === 0) {
+        table.innerHTML = "<tr><td>No data</td></tr>";
+        return;
+    }
+
+    table.innerHTML =
+        "<tr>" + data.columns.map(c => `<th>${c}</th>`).join("") + "</tr>";
+
+    data.rows.forEach(r => {
+        table.innerHTML +=
+            "<tr>" + r.map(v => `<td>${v ?? ""}</td>`).join("") + "</tr>";
+    });
+}
+
+/* ---------- PAGINATION ---------- */
+function renderPagination(totalPages) {
+    const pagination = document.getElementById("pagination");
+    pagination.innerHTML = "";
+
+    if (totalPages <= 1) return;
+
+    const prev = document.createElement("button");
+    prev.innerText = "Previous";
+    prev.disabled = page === 1;
+    prev.onclick = () => { page--; loadData(); };
+    pagination.appendChild(prev);
+
+    for (let i = 1; i <= totalPages; i++) {
+        const b = document.createElement("button");
+        b.innerText = i;
+        if (i === page) b.classList.add("active");
+        b.onclick = () => { page = i; loadData(); };
+        pagination.appendChild(b);
+    }
+
+    const next = document.createElement("button");
+    next.innerText = "Next";
+    next.disabled = page === totalPages;
+    next.onclick = () => { page++; loadData(); };
+    pagination.appendChild(next);
+}
+
+/* ---------- EXPORT ---------- */
+function exportData() {
+    fetch(`/export?upload_id=${uploadId}`, {
+        headers: {
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(r => r.blob())
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `cleaned_${uploadId}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}
+
+/* ---------- INIT ---------- */
+loadData();
+</script>
+</body>
+</html>

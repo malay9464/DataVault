@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>File Management System</title>
+    <style>
+        body {
+            margin:0;
+            font-family:"Segoe UI";
+            background:#f4f6f8;
+        }
+
+        /* ---------- GLOBAL HEADER ---------- */
+        .top-header {
+            position:fixed;
+            top:0;
+            left:0;
+            width:100%;
+            height:70px;
+            background:#1a1a1a;
+            color:#e5e7eb;
+            display:flex;
+            align-items:center;
+            padding:0 24px;
+            font-size:30px;
+            font-weight:600;
+            z-index:200;
+            box-shadow:0 2px 6px rgba(0,0,0,0.25);
+            box-sizing: border-box;
+
+        }
+
+        /* ---------- SIDEBAR ---------- */
+        .sidebar {
+            position:fixed;
+            top:70px;
+            left:0;
+            width:260px;
+            height:calc(100vh - 70px);
+            background:#1f2937;
+            color:white;
+            padding:20px;
+            overflow-y:auto;
+            z-index:100;
+        }
+
+        .sidebar h3 {
+            margin:14px 0 6px;
+            font-size:12px;
+            text-transform:uppercase;
+            letter-spacing:1px;
+            color:#9ca3af;
+        }
+        .category {
+            transition: background-color 0.15s ease, transform 0.12s ease;
+        }
+
+        .category:hover {
+            transform: translateX(3px);
+        }
+
+        .category.active {
+            transition: background-color 0.15s ease;
+        }
+
+        .category {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            padding:9px 10px;
+            border-radius:6px;
+            cursor:pointer;
+            margin-bottom:4px;
+            position:relative;
+        }
+
+        .category:hover { background:#374151; }
+
+        .category.active {
+            background:#2563eb;
+            font-weight:600;
+        }
+
+        .category.active::before {
+            content:"";
+            position:absolute;
+            left:0;
+            top:0;
+            bottom:0;
+            width:4px;
+            background:#93c5fd;
+            border-radius:4px 0 0 4px;
+        }
+
+        /* hide actions until hover */
+        .cat-actions {
+            opacity:0;
+            transform: translateX(4px);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+
+        .category:hover .cat-actions {
+            opacity:1;
+            transform: translateX(0);
+        }
+
+
+        .cat-actions button {
+            background:none;
+            border:none;
+            color:#e5e7eb;
+            cursor:pointer;
+            margin-left:6px;
+            font-size:14px;
+        }
+
+        /* ---------- MAIN ---------- */
+        .main {
+            margin-left:260px;
+            padding:25px;
+            padding-top:95px;
+            min-height:100vh;
+        }
+
+        .content-box {
+            background:white;
+            border-radius:14px;
+            padding:28px;
+        }
+
+        /* ---------- UPLOAD ---------- */
+        .upload-box {
+            border:2px dashed #3b82f6;
+            padding:55px;
+            text-align:center;
+            cursor:pointer;
+            border-radius:14px;
+            margin:15px 0 15px;
+            color:#374151;
+            font-size:15px;
+            transition:.15s;
+        }
+
+        .upload-box:hover {
+            background:#eff6ff;
+            border-color:#2563eb;
+        }
+
+        #fileName {
+            margin-top:8px;
+            font-weight:600;
+            color:#2563eb;
+        }
+
+        #uploadBtn {
+            background:#2563eb;
+            color:white;
+            padding:9px 18px;
+            font-size:15px;
+            margin-bottom:25px;
+        }
+
+        #uploadBtn:disabled {
+            opacity:.7;
+            cursor:not-allowed;
+        }
+
+        /* ---------- SEARCH ---------- */
+        .search-box {
+            margin:18px 0;
+        }
+
+        .search-box input {
+            width:340px;
+            padding:9px 12px;
+            border-radius:8px;
+            border:1px solid #ccc;
+            font-size:14px;
+        }
+
+        /* ---------- TABLE ---------- */
+        .table-wrapper {
+            overflow-x:auto;
+            margin-top:10px;
+        }
+
+        table {
+            width:100%;
+            min-width:900px;
+            border-collapse:collapse;
+        }
+
+        th, td {
+            padding:10px;
+            border-bottom:1px solid #e5e7eb;
+            white-space:nowrap;
+        }
+
+        th {
+            background:#1e40af;
+            color:white;
+        }
+
+        tr:hover td {
+            background:#f1f5f9;
+        }
+
+        /* ---------- BUTTONS ---------- */
+        button {
+            border:none;
+            border-radius:6px;
+            cursor:pointer;
+        }
+
+        .view {
+            background:#2563eb;
+            color:white;
+            padding:6px 14px;
+        }
+
+        .delete {
+            background:white;
+            color:#dc2626;
+            border:1px solid #dc2626;
+            padding:6px 14px;
+        }
+
+        /* ---------- PAGINATION ---------- */
+        .pagination {
+            display:flex;
+            gap:6px;
+            margin-top:18px;
+            justify-content:center;
+            flex-wrap:wrap;
+        }
+
+        .pagination button.active {
+            background:#2563eb;
+            color:white;
+            font-weight:bold;
+        }
+
+        /* ---------- ALIGNMENT FIX ---------- */
+        table th:not(:first-child),
+        table td:not(:first-child) {
+            text-align:center;
+        }
+
+        table td:last-child {
+            display:flex;
+            justify-content:center;
+            gap:8px;
+        }
+
+        /* ---------- SPINNER ---------- */
+        .spinner {
+            width:16px;
+            height:16px;
+            border:2px solid #ccc;
+            border-top:2px solid white;
+            border-radius:50%;
+            margin-left:8px;
+            display:inline-block;
+            animation:spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform:rotate(360deg); }
+        }
+        .new-category-btn {
+            margin-top:10px;
+            padding:8px;
+            cursor:pointer;
+            color:#93c5fd;
+            font-weight:600;
+            transition: color 0.15s ease, transform 0.12s ease;
+        }
+
+        .new-category-btn:hover {
+            color:#bfdbfe;
+            transform: translateX(4px);
+        }
+
+        .upload-box {
+        transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+        }
+
+        .upload-box:hover {
+        transform: scale(1.01);
+        }
+
+                /* ---------- CATEGORY SELECT (MODERN) ---------- */
+
+        .select-wrapper {
+            position: relative;
+            width: 280px;
+            margin: 10px 0 18px;
+        }
+
+        .select-wrapper select {
+            width: 100%;
+            padding: 10px 42px 10px 14px;
+            font-size: 14px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            color: #111827;
+            appearance: none;
+            cursor: pointer;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+        }
+
+        /* hover */
+        .select-wrapper select:hover {
+            background: #ffffff;
+            border-color: #93c5fd;
+        }
+
+        /* focus */
+        .select-wrapper select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+            background: #ffffff;
+        }
+
+        /* custom arrow */
+        .select-wrapper::after {
+            content: "▾";
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            color: #6b7280;
+            pointer-events: none;
+        }
+
+        /* disabled state (future-proof) */
+        .select-wrapper select:disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+        /* ---------- LOGOUT BUTTON ---------- */
+        .logout-btn {
+            margin-left: auto;
+            background: transparent;
+            border: 1px solid #374151;
+            color: #e5e7eb;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 
+                background-color 0.15s ease,
+                border-color 0.15s ease,
+                transform 0.12s ease;
+        }
+
+        .logout-btn:hover {
+            background: #374151;
+            border-color: #4b5563;
+            transform: translateY(-1px);
+        }
+
+        .logout-btn:active {
+            transform: translateY(0);
+        }
+
+        /* ---------- MODAL ---------- */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+        }
+
+        .modal-box {
+            background: white;
+            width: 380px;
+            border-radius: 14px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            animation: popIn 0.18s ease;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.96); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .modal-close {
+            cursor: pointer;
+            font-size: 22px;
+            color: #6b7280;
+        }
+
+        .modal-body {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .modal-body label {
+            font-size: 13px;
+            color: #374151;
+        }
+
+        .modal-body input,
+        .modal-body select {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            font-size: 14px;
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #111827;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+
+    </style>
+</head>
+<body>
+<!-- HEADER -->
+<div class="top-header">
+    <span style="letter-spacing:0.3px;">File Management System</span>
+
+    <button class="logout-btn" onclick="logout()">
+        Logout
+    </button>
+</div>
+
+
+
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <div class="category active" onclick="applyFilter('all', this)">
+        <span>All Files</span><span id="allCount">0</span>
+    </div>
+
+<div class="category" id="myUploadsTab"
+     onclick="applyFilter('mine', this)"
+     style="display:none;">
+    <span>My Uploads</span>
+</div>
+
+    <div class="category" onclick="applyFilter('uncat', this)">
+        <span>Uncategorized</span><span id="uncatCount">0</span>
+    </div>
+
+    <hr>
+
+    <h3>Categories</h3>
+    <div id="categoryList"></div>
+
+    <hr>
+
+<div
+    onclick="addCategoryPrompt()"
+    class="new-category-btn">
+    + New Category
+</div>
+
+<div
+    onclick="openAddUserModal()"
+    class="new-category-btn"
+    style="margin-top:6px;">
+    + Add User
+</div>
+
+<div onclick="location.href='/users.html'" class="new-category-btn">
+    Manage Users
+</div>
+
+</div>
+
+<!-- MAIN -->
+<div class="main">
+    <div class="content-box">
+        <h2>Upload New File</h2>
+
+        <div class="select-wrapper">
+            <select id="categorySelect"></select>
+        </div>
+
+        <div class="upload-box" onclick="fileInput.click()">
+            Click to select file
+            <div id="fileName"></div>
+        </div>
+
+        <input type="file" id="fileInput" hidden accept=".csv,.xls,.xlsx">
+
+        <button id="uploadBtn" onclick="upload()">
+            Upload <span id="uploadSpinner" class="spinner" style="display:none;"></span>
+        </button>
+
+        <h3>Uploads</h3>
+
+        <hr style="margin:25px 0; border:none; border-top:1px solid #e5e7eb;">
+
+        <div class="search-box" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <input id="searchInput" placeholder="Filename contains">
+
+    <input id="totalMin" type="number" placeholder="Total ≥" style="width:90px">
+    <input id="totalMax" type="number" placeholder="Total ≤" style="width:90px">
+
+    <input id="dupMin" type="number" placeholder="Dup ≥" style="width:90px">
+    <input id="dupMax" type="number" placeholder="Dup ≤" style="width:90px">
+
+    <input id="dateFrom" type="date">
+    <input id="dateTo" type="date">
+
+    <button onclick="applyAdvancedSearch()">Search</button>
+    <button onclick="resetSearch()">Reset</button>
+</div>
+
+        <div class="table-wrapper">
+            <table id="uploadTable"></table>
+        </div>
+
+        <div class="pagination" id="pagination"></div>
+    </div>
+</div>
+
+
+
+<!-- ---------- ADD USER MODAL ---------- -->
+<div id="addUserModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>Add User</h3>
+            <span class="modal-close" onclick="closeAddUserModal()">×</span>
+        </div>
+
+        <div class="modal-body">
+            <label>Email</label>
+            <input type="email" id="newUserEmail" placeholder="Enter email">
+
+            <label>Password</label>
+            <input type="password" id="newUserPassword" placeholder="Enter password">
+
+            <label>Role</label>
+            <select id="newUserRole">
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeAddUserModal()">Cancel</button>
+            <button class="btn-primary" onclick="createUser()">Add User</button>
+        </div>
+    </div>
+</div>
+
+<!-- JS UNCHANGED -->
+<script>
+
+const token = localStorage.getItem("access_token");
+
+if (!token) {
+    window.location.href = "/static/login.html";
+}
+
+let currentUser = null;
+let selectedFile = null;
+let currentFilter = "all";
+let categoriesCache = [];
+let allUploads = [];
+let filteredUploads = [];
+let page = 1;
+const PAGE_SIZE = 10;
+
+const fileInput = document.getElementById("fileInput"); // Assuming ID based on usage
+const fileName = document.getElementById("fileName");   // Assuming ID based on usage
+const categoryList = document.getElementById("categoryList");
+const categorySelect = document.getElementById("categorySelect");
+const searchInput = document.getElementById("searchInput");
+const uploadTable = document.getElementById("uploadTable");
+const pagination = document.getElementById("pagination");
+const newCategory = document.getElementById("newCategory");
+const allCountSpan = document.getElementById("allCount");
+const uncatCountSpan = document.getElementById("uncatCount");
+
+function authFetch(url, options = {}) {
+    return fetch(url, {
+        ...options,
+        headers: {
+            ...(options.headers || {}),
+            "Authorization": `Bearer ${token}`
+        }
+    });
+}
+
+fileInput.onchange = () => {
+    selectedFile = fileInput.files[0];
+    fileName.innerText = selectedFile ? selectedFile.name : "";
+};
+
+function buildSearchParams() {
+    const p = new URLSearchParams();
+
+    if (searchInput.value.trim())
+        p.append("filename", searchInput.value.trim());
+
+    if (totalMin.value)
+        p.append("total_min", totalMin.value);
+
+    if (totalMax.value)
+        p.append("total_max", totalMax.value);
+
+    if (dupMin.value)
+        p.append("dup_min", dupMin.value);
+
+    if (dupMax.value)
+        p.append("dup_max", dupMax.value);
+
+    if (dateFrom.value)
+        p.append("date_from", dateFrom.value);
+
+    if (dateTo.value)
+        p.append("date_to", dateTo.value);
+
+    return p.toString();
+}
+
+async function addCategoryPrompt() {
+    const name = prompt("Enter category name");
+    if (!name) return;
+
+    const res = await authFetch(
+        `/categories?name=${encodeURIComponent(name.trim())}`,
+        { method: "POST" }
+    );
+
+    if (!res.ok) {
+        alert("Category already exists");
+        return;
+    }
+
+    loadCategories();
+}
+
+
+function applyAdvancedSearch() {
+    page = 1;
+    loadUploads();
+}
+
+function resetSearch() {
+    searchInput.value = "";
+    totalMin.value = "";
+    totalMax.value = "";
+    dupMin.value = "";
+    dupMax.value = "";
+    dateFrom.value = "";
+    dateTo.value = "";
+
+    page = 1;
+    loadUploads();
+}
+
+/* ---------- CATEGORIES ---------- */
+async function loadCategories() {
+    const res = await authFetch("/categories");
+    const cats = await res.json();
+    categoriesCache = cats;
+
+    categoryList.innerHTML = "";
+    categorySelect.innerHTML = "";
+
+    let allCount = 0;
+    let uncatCount = 0;
+
+    cats.forEach(c => {
+        // ✅ COUNT LOGIC (must happen for ALL categories)
+        allCount += c.uploads;
+
+        if (c.name.toLowerCase() === "uncategorized") {
+            uncatCount = c.uploads;
+        }
+
+        // ✅ ALWAYS add to upload dropdown
+        categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+
+        // ❌ DO NOT show Uncategorized in Categories list
+        if (c.name.toLowerCase() === "uncategorized") {
+            return;
+        }
+
+        const div = document.createElement("div");
+        div.className = "category";
+
+        div.innerHTML = `
+            <span onclick="applyFilter(${c.id}, this.parentElement)">
+                ${c.name} (${c.uploads})
+            </span>
+            <span class="cat-actions">
+                <button onclick="renameCategory(${c.id}, '${c.name}')">✎</button>
+                <button onclick="deleteCategory(${c.id})">✖</button>
+            </span>
+        `;
+        categoryList.appendChild(div);
+    });
+
+    allCountSpan.innerText = allCount;
+    uncatCountSpan.innerText = uncatCount;
+}
+
+/* ---------- FILTER ---------- */
+function applyFilter(type, el) {
+    currentFilter = type;
+    page = 1;
+    searchInput.value = "";
+
+    document.querySelectorAll(".category")
+        .forEach(c => c.classList.remove("active"));
+    el.classList.add("active");
+
+    loadUploads();
+}
+
+/* ---------- UPLOAD ---------- */
+async function upload() {
+    if (!selectedFile) return alert("Select a file");
+
+    const btn = document.getElementById("uploadBtn");
+    const spinner = document.getElementById("uploadSpinner");
+
+    btn.disabled = true;
+    spinner.style.display = "inline-block";
+
+    try {
+        const fd = new FormData();
+        fd.append("file", selectedFile);
+
+        await authFetch(`/upload?category_id=${categorySelect.value}`, {
+            method: "POST",
+            body: fd
+        });
+
+        selectedFile = null;
+        fileInput.value = "";
+        fileName.innerText = "";
+
+        loadCategories();
+        loadUploads();
+    } catch (err) {
+        alert("Upload failed. Please try again.");
+    } finally {
+        btn.disabled = false;
+        spinner.style.display = "none";
+    }
+}
+
+function openAddUserModal() {
+    document.getElementById("addUserModal").style.display = "flex";
+}
+
+function closeAddUserModal() {
+    document.getElementById("addUserModal").style.display = "none";
+}
+
+async function createUser() {
+    const email = document.getElementById("newUserEmail").value.trim();
+    const password = document.getElementById("newUserPassword").value.trim();
+    const role = document.getElementById("newUserRole").value;
+
+    if (!email || !password) {
+        alert("Email and password required");
+        return;
+    }
+
+    const res = await authFetch(
+        `/admin/users?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&role=${role}`,
+        { method: "POST" }
+    );
+
+    if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || "Failed to create user");
+        return;
+    }
+
+    closeAddUserModal();
+    alert("User added successfully");
+
+    document.getElementById("newUserEmail").value = "";
+    document.getElementById("newUserPassword").value = "";
+}
+
+
+async function loadUser() {
+    const res = await authFetch("/me");
+    currentUser = await res.json();
+
+    if (currentUser.role !== "admin") {
+        // Hide admin-only buttons
+        document
+          .querySelectorAll(".new-category-btn")
+          .forEach(b => b.style.display = "none");
+
+        // Hide category actions (rename/delete)
+        document
+          .querySelectorAll(".cat-actions")
+          .forEach(a => a.style.display = "none");
+    }
+    if (currentUser.role === "user") {
+    document.getElementById("myUploadsTab").style.display = "flex";
+}
+
+}
+
+
+loadUser();
+
+/* ---------- LOAD UPLOADS ---------- */
+async function loadUploads() {
+    let url = "/uploads";
+    const params = new URLSearchParams();
+
+    if (currentFilter === "uncat") {
+        const u = categoriesCache.find(c => c.name.toLowerCase() === "uncategorized");
+        if (u) params.append("category_id", u.id);
+    } else if (currentFilter !== "all") {
+        params.append("category_id", currentFilter);
+    }
+
+    const adv = buildSearchParams();
+    if (adv) {
+        adv.split("&").forEach(p => {
+            const [k, v] = p.split("=");
+            params.append(k, decodeURIComponent(v));
+        });
+    }
+
+    if (params.toString())
+        url += "?" + params.toString();
+
+    let endpoint = "/uploads";
+
+    if (currentFilter === "mine") {
+        endpoint = "/my-uploads";
+    }
+
+    const res = await authFetch(endpoint);
+    allUploads = await res.json();
+    filteredUploads = [...allUploads];
+    renderTable();
+
+}
+
+
+
+/* ---------- TABLE + PAGINATION ---------- */
+function renderTable() {
+    const totalPages = Math.ceil(filteredUploads.length / PAGE_SIZE);
+    const start = (page - 1) * PAGE_SIZE;
+    const data = filteredUploads.slice(start, start + PAGE_SIZE);
+
+    // ----- TABLE HEADER -----
+    let header = `
+        <tr>
+            <th>File</th>
+            <th>Category</th>
+            <th>Total</th>
+            <th>Duplicates</th>
+    `;
+
+    // Admin-only column
+    if (currentUser.role === "admin") {
+        header += `<th>Uploaded By</th>`;
+    }
+
+    header += `<th>Actions</th></tr>`;
+    uploadTable.innerHTML = header;
+
+    // ----- TABLE ROWS -----
+    data.forEach(r => {
+        let row = `
+            <tr>
+                <td>${r.filename}</td>
+                <td>${r.category}</td>
+                <td>${r.total_records}</td>
+                <td>${r.duplicate_records}</td>
+        `;
+
+        // Admin-only uploader info
+        if (currentUser.role === "admin") {
+            row += `<td>${r.uploaded_by}</td>`;
+        }
+
+        row += `
+                <td>
+                    <button class="view"
+                        onclick="location.href='/preview.html?upload_id=${r.upload_id}'">
+                        View
+                    </button>
+        `;
+
+        // Delete only for admin or owner
+        if (
+            currentUser.role === "admin" ||
+            r.created_by_user_id === currentUser.id
+        ) {
+            row += `
+                <button class="delete"
+                    onclick="del(${r.upload_id})">
+                    Delete
+                </button>
+            `;
+        }
+
+        row += `
+                </td>
+            </tr>
+        `;
+
+        uploadTable.innerHTML += row;
+    });
+
+    renderPagination(totalPages);
+}
+
+
+function renderPagination(totalPages) {
+    pagination.innerHTML = "";
+    if (totalPages <= 1) return;
+
+    const prev = document.createElement("button");
+    prev.innerText = "Previous";
+    prev.disabled = page === 1;
+    prev.onclick = () => {
+        page--;
+        renderTable();
+    };
+    pagination.appendChild(prev);
+
+    let start = Math.max(1, page - 2);
+    let end = Math.min(totalPages, page + 2);
+
+    if (start > 1) addPage(1);
+    if (start > 2) pagination.append("...");
+
+    for (let i = start; i <= end; i++) addPage(i);
+
+    if (end < totalPages - 1) pagination.append("...");
+    if (end < totalPages) addPage(totalPages);
+
+    const next = document.createElement("button");
+    next.innerText = "Next";
+    next.disabled = page === totalPages;
+    next.onclick = () => {
+        page++;
+        renderTable();
+    };
+    pagination.appendChild(next);
+}
+
+function addPage(n) {
+    const b = document.createElement("button");
+    b.innerText = n;
+    if (n === page) b.classList.add("active");
+    b.onclick = () => {
+        page = n;
+        renderTable();
+    };
+    pagination.appendChild(b);
+}
+
+/* ---------- CATEGORY CRUD ---------- */
+// async function addCategory() {
+//     const name = newCategory.value.trim();
+//     if (!name) return;
+//     await fetch(`/categories?name=${encodeURIComponent(name)}`, {
+//         method: "POST"
+//     });
+//     newCategory.value = "";
+//     loadCategories();
+// }
+
+async function renameCategory(id, oldName) {
+    const name = prompt("Rename category", oldName);
+    if (!name) return;
+    await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, {
+        method: "PUT"
+    });
+    loadCategories();
+    loadUploads();
+}
+
+async function deleteCategory(id) {
+    if (!confirm("Delete category?")) return;
+    const res = await authFetch(`/categories/${id}`, {
+        method: "DELETE"
+    });
+    if (!res.ok) alert("Category has uploads");
+    loadCategories();
+    loadUploads();
+}
+
+/* ---------- DELETE UPLOAD ---------- */
+async function del(uid) {
+    if (!confirm("Delete this upload?")) return;
+    await authFetch(`/upload/${uid}`, {
+        method: "DELETE"
+    });
+    loadCategories();
+    loadUploads();
+}
+
+function logout() {
+    localStorage.removeItem("access_token");
+    window.location.href = "/static/login.html";
+}
+
+loadCategories();
+loadUploads();
+
+async function resetPasswordPrompt(userId, email) {
+    const pwd = prompt(`Enter new password for ${email}`);
+    if (!pwd) return;
+
+    const res = await authFetch(
+        `/admin/users/${userId}/reset-password?new_password=${encodeURIComponent(pwd)}`,
+        { method: "POST" }
+    );
+
+    if (!res.ok) {
+        alert("Failed to reset password");
+        return;
+    }
+
+    alert("Password reset successfully");
+}
+
+</script>
+</body>
+</html>

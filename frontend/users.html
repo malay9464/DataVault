@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Management</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: "Segoe UI";
+            background: #f4f6f8;
+        }
+
+        .top-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 70px;
+            background: #1a1a1a;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-sizing: border-box;
+            z-index: 200;
+        }
+
+        .top-header span {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            margin-left: auto;
+            background: transparent;
+            border: 1px solid #374151;
+            color: #e5e7eb;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .main {
+            padding: 110px 40px 40px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .card-header h2 {
+            margin: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #1e40af;
+            color: white;
+            text-align: left;
+            padding: 12px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-reset {
+            background: #2563eb;
+            color: white;
+        }
+
+        .status-active {
+            color: #16a34a;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div class="top-header">
+    <span>User Management</span>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+
+<div class="main">
+    <div class="card">
+        <div class="card-header">
+            <h2>Users</h2>
+            <button class="btn btn-reset" onclick="location.href='/'">
+                Back to Files
+            </button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="usersTable"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem("access_token");
+if (!token) location.href = "/static/login.html";
+
+function authFetch(url, options = {}) {
+    return fetch(url, {
+        ...options,
+        headers: {
+            ...(options.headers || {}),
+            "Authorization": "Bearer " + token
+        }
+    });
+}
+
+function logout() {
+    localStorage.removeItem("access_token");
+    location.href = "/static/login.html";
+}
+
+async function loadUsers() {
+    const res = await authFetch("/admin/users");
+    if (!res.ok) {
+        alert("Access denied");
+        location.href = "/";
+        return;
+    }
+
+    const users = await res.json();
+    const tbody = document.getElementById("usersTable");
+    tbody.innerHTML = "";
+
+    users.forEach(u => {
+        tbody.innerHTML += `
+            <tr>
+                <td>${u.email}</td>
+                <td>${u.role}</td>
+                <td class="status-active">${u.is_active ? "Active" : "Disabled"}</td>
+                <td>
+                    <button class="btn btn-reset"
+                        onclick="resetPassword(${u.id}, '${u.email}')">
+                        Reset Password
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+async function resetPassword(userId, email) {
+    const pwd = prompt(`Enter new password for ${email}`);
+    if (!pwd) return;
+
+    const res = await authFetch(
+        `/admin/users/${userId}/reset-password?new_password=${encodeURIComponent(pwd)}`,
+        { method: "POST" }
+    );
+
+    if (!res.ok) {
+        alert("Failed to reset password");
+        return;
+    }
+
+    alert("Password reset successfully");
+}
+
+loadUsers();
+</script>
+
+</body>
+</html>
