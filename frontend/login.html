@@ -3,59 +3,149 @@
 <head>
     <title>Login</title>
     <style>
-        body {
-            font-family: "Segoe UI";
-            background: #f4f6f8;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        .box {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            width: 320px;
-        }
-        input, button {
-            width: 100%;
-            padding: 10px;
-            margin-top: 10px;
-        }
-        button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-    </style>
+    body {
+        margin: 0;
+        height: 100vh;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .login-card {
+        width: 360px;
+        background: white;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+        animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-header {
+        text-align: center;
+        margin-bottom: 24px;
+    }
+
+    .login-header h2 {
+        margin: 0;
+        font-size: 24px;
+        color: #0f172a;
+    }
+
+    .login-header p {
+        margin: 6px 0 0;
+        font-size: 14px;
+        color: #64748b;
+    }
+
+    .field {
+        margin-bottom: 16px;
+    }
+
+    .field label {
+        font-size: 13px;
+        color: #475569;
+        display: block;
+        margin-bottom: 6px;
+    }
+
+    .field input {
+        width: 100%;
+        padding: 11px 12px;
+        border-radius: 8px;
+        border: 1px solid #cbd5f5;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .field input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+    }
+
+    .login-btn {
+        width: 100%;
+        margin-top: 10px;
+        padding: 12px;
+        border-radius: 10px;
+        border: none;
+        background: #2563eb;
+        color: white;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .login-btn:hover {
+        background: #1e40af;
+        transform: translateY(-1px);
+    }
+
+    .login-btn:active {
+        transform: translateY(0);
+    }
+
+    .brand {
+        text-align: center;
+        margin-top: 20px;
+        font-size: 12px;
+        color: #94a3b8;
+    }
+</style>
+
 </head>
 <body>
 
-<div class="box">
-    <h2>Login</h2>
-    <input id="email" placeholder="Email">
-    <input id="password" type="password" placeholder="Password">
-    <button onclick="login()">Login</button>
-    <p id="err" style="color:red;"></p>
+<div class="login-card">
+    <div class="login-header">
+        <h2>Data Vault</h2>
+        <p>Secure File Management</p>
+    </div>
+
+    <div class="field">
+        <label>Email</label>
+        <input id="email" type="email" placeholder="you@example.com">
+    </div>
+
+    <div class="field">
+        <label>Password</label>
+        <input id="password" type="password" placeholder="••••••••">
+    </div>
+
+    <button class="login-btn" onclick="login()">Login</button>
+
+    <div class="brand">
+        © 2026 Data Vault
+    </div>
 </div>
 
 <script>
 async function login() {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
     const form = new URLSearchParams();
-    form.append("username", email.value);
-    form.append("password", password.value);
+    form.append("username", email);   // IMPORTANT: username, not email
+    form.append("password", password);
 
     const res = await fetch("/login", {
         method: "POST",
         headers: {
             "Content-Type": "application/x-www-form-urlencoded"
         },
-        body: form
+        body: form.toString()
     });
 
     if (!res.ok) {
-        err.innerText = "Invalid credentials";
+        alert("Invalid email or password");
         return;
     }
 
@@ -66,4 +156,5 @@ async function login() {
 </script>
 
 </body>
+
 </html>

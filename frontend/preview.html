@@ -124,10 +124,12 @@ if (!token) {
     window.location.href = "/static/login.html";
 }
 
-function authFetch(url) {
+function authFetch(url, options = {}) {
     return fetch(url, {
+        ...options,
         headers: {
-            "Authorization": `Bearer ${token}`
+            ...(options.headers || {}),
+            "Authorization": "Bearer " + token
         }
     });
 }
@@ -191,44 +193,85 @@ function renderPagination(totalPages) {
 
     if (totalPages <= 1) return;
 
+    const MAX_VISIBLE = 5;
+
+    // Previous
     const prev = document.createElement("button");
     prev.innerText = "Previous";
     prev.disabled = page === 1;
-    prev.onclick = () => { page--; loadData(); };
+    prev.onclick = () => {
+        page--;
+        loadData();
+    };
     pagination.appendChild(prev);
 
-    for (let i = 1; i <= totalPages; i++) {
-        const b = document.createElement("button");
-        b.innerText = i;
-        if (i === page) b.classList.add("active");
-        b.onclick = () => { page = i; loadData(); };
-        pagination.appendChild(b);
+    let start = Math.max(1, page - Math.floor(MAX_VISIBLE / 2));
+    let end = start + MAX_VISIBLE - 1;
+
+    if (end > totalPages) {
+        end = totalPages;
+        start = Math.max(1, end - MAX_VISIBLE + 1);
     }
 
+    if (start > 1) {
+        addPageButton(1);
+        if (start > 2) pagination.append("...");
+    }
+
+    for (let i = start; i <= end; i++) {
+        addPageButton(i);
+    }
+
+    if (end < totalPages) {
+        if (end < totalPages - 1) pagination.append("...");
+        addPageButton(totalPages);
+    }
+
+    // Next
     const next = document.createElement("button");
     next.innerText = "Next";
     next.disabled = page === totalPages;
-    next.onclick = () => { page++; loadData(); };
+    next.onclick = () => {
+        page++;
+        loadData();
+    };
     pagination.appendChild(next);
 }
 
+function addPageButton(n) {
+    const b = document.createElement("button");
+    b.innerText = n;
+    if (n === page) b.classList.add("active");
+    b.onclick = () => {
+        page = n;
+        loadData();
+    };
+    pagination.appendChild(b);
+}
+
+
 /* ---------- EXPORT ---------- */
 function exportData() {
-    fetch(`/export?upload_id=${uploadId}`, {
-        headers: {
-            "Authorization": `Bearer ${token}`
-        }
-    })
-    .then(r => r.blob())
-    .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `cleaned_${uploadId}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-    });
+    authFetch(`/export?upload_id=${uploadId}`)
+        .then(r => {
+            if (!r.ok) throw new Error("Unauthorized");
+            return r.blob();
+        })
+        .then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `cleaned_${uploadId}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        })
+        .catch(() => {
+            alert("Session expired. Please login again.");
+            localStorage.removeItem("access_token");
+            window.location.href = "/static/login.html";
+        });
 }
+
 
 /* ---------- INIT ---------- */
 loadData();

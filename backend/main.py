@@ -91,19 +91,38 @@ async def upload_file(
     duplicate_records = total_records - len(cleaned_df)
     upload_id = int(time.time())
 
+    BATCH_SIZE = 5000
+    batch = []
+
     with engine.begin() as conn:
+        # -------- BATCH INSERT CLEANED DATA --------
         for _, row in cleaned_df.iterrows():
+            batch.append({
+                "uid": upload_id,
+                "data": json.dumps(clean_nan(row.to_dict()), default=str)
+            })
+
+            if len(batch) == BATCH_SIZE:
+                conn.execute(
+                    text("""
+                        INSERT INTO cleaned_data (upload_id, row_data)
+                        VALUES (:uid, :data)
+                    """),
+                    batch
+                )
+                batch.clear()
+
+        # insert remaining rows
+        if batch:
             conn.execute(
                 text("""
                     INSERT INTO cleaned_data (upload_id, row_data)
                     VALUES (:uid, :data)
                 """),
-                {
-                    "uid": upload_id,
-                    "data": json.dumps(clean_nan(row.to_dict()), default=str)
-                }
+                batch
             )
 
+        # -------- INSERT UPLOAD LOG --------
         conn.execute(
             text("""
                 INSERT INTO upload_log
@@ -125,6 +144,7 @@ async def upload_file(
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
     return {"success": True}
+
 
 
 # ---------------- UPLOAD LIST ----------------

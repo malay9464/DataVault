@@ -26,7 +26,6 @@
             z-index:200;
             box-shadow:0 2px 6px rgba(0,0,0,0.25);
             box-sizing: border-box;
-
         }
 
         /* ---------- SIDEBAR ---------- */
@@ -246,7 +245,7 @@
             cursor:pointer;
         }
 
-        .view {
+        /* .view {
             background:#2563eb;
             color:white;
             padding:6px 14px;
@@ -257,7 +256,7 @@
             color:#dc2626;
             border:1px solid #dc2626;
             padding:6px 14px;
-        }
+        } */
 
         /* ---------- PAGINATION ---------- */
         .pagination {
@@ -280,11 +279,11 @@
             text-align:center;
         }
 
-        table td:last-child {
+        /* table td:last-child {
             display:flex;
             justify-content:center;
             gap:8px;
-        }
+        } */
 
         /* ---------- SPINNER ---------- */
         .spinner {
@@ -486,6 +485,53 @@
             color: #111827;
             padding: 8px 16px;
             border-radius: 8px;
+        }
+
+        /* ---------- ACTION BUTTONS ---------- */
+        .action-group {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .btn-view {
+            background: #2563eb;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .btn-view:hover {
+            background: #1e40af;
+        }
+
+        .btn-delete {
+            background: transparent;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        /* ---------- DISABLED DELETE ---------- */
+        .btn-delete.disabled,
+        .btn-delete:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background: transparent;
+            border-color: #fca5a5;
+        }
+
+        .btn-delete.disabled:hover,
+        .btn-delete:disabled:hover {
+            background: transparent;
+        }
+
+        .btn-delete:hover {
+            background: #fee2e2;
+            border-color: #dc2626;
         }
 
     </style>
@@ -780,17 +826,17 @@ async function loadCategories() {
         `;
         categoryList.appendChild(div);
     });
-
+                   
     allCountSpan.innerText = allCount;
     uncatCountSpan.innerText = uncatCount;
 }
-
+                     
 /* ---------- FILTER ---------- */
 function applyFilter(type, el) {
     currentFilter = type;
     page = 1;
     searchInput.value = "";
-
+               
     document.querySelectorAll(".category")
         .forEach(c => c.classList.remove("active"));
     el.classList.add("active");
@@ -889,44 +935,56 @@ async function loadUser() {
 
 }
 
-
 loadUser();
 
 /* ---------- LOAD UPLOADS ---------- */
 async function loadUploads() {
-    let url = "/uploads";
-    const params = new URLSearchParams();
+    let url = "";
 
-    if (currentFilter === "uncat") {
-        const u = categoriesCache.find(c => c.name.toLowerCase() === "uncategorized");
-        if (u) params.append("category_id", u.id);
-    } else if (currentFilter !== "all") {
-        params.append("category_id", currentFilter);
-    }
-
-    const adv = buildSearchParams();
-    if (adv) {
-        adv.split("&").forEach(p => {
-            const [k, v] = p.split("=");
-            params.append(k, decodeURIComponent(v));
-        });
-    }
-
-    if (params.toString())
-        url += "?" + params.toString();
-
-    let endpoint = "/uploads";
-
+    // ---------- DECIDE DATA SOURCE ----------
     if (currentFilter === "mine") {
-        endpoint = "/my-uploads";
+        url = "/my-uploads";
+    } else {
+        url = "/uploads";
+        const params = new URLSearchParams();
+
+        if (currentFilter === "uncat") {
+            const u = categoriesCache.find(
+                c => c.name.toLowerCase() === "uncategorized"
+            );
+            if (u) params.append("category_id", u.id);
+        } 
+        else if (currentFilter !== "all") {
+            params.append("category_id", currentFilter);
+        }
+
+        // Advanced search params
+        const adv = buildSearchParams();
+        if (adv) {
+            adv.split("&").forEach(p => {
+                const [k, v] = p.split("=");
+                params.append(k, decodeURIComponent(v));
+            });
+        }
+
+        if (params.toString()) {
+            url += "?" + params.toString();
+        }
     }
 
-    const res = await authFetch(endpoint);
+    // ---------- FETCH ----------
+    const res = await authFetch(url);
+
+    if (!res.ok) {
+        alert("Failed to load uploads");
+        return;
+    }
+
     allUploads = await res.json();
     filteredUploads = [...allUploads];
     renderTable();
-
 }
+
 
 
 
@@ -936,7 +994,7 @@ function renderTable() {
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
 
-    // ----- TABLE HEADER -----
+    /* ---------- TABLE HEADER ---------- */
     let header = `
         <tr>
             <th>File</th>
@@ -945,7 +1003,6 @@ function renderTable() {
             <th>Duplicates</th>
     `;
 
-    // Admin-only column
     if (currentUser.role === "admin") {
         header += `<th>Uploaded By</th>`;
     }
@@ -953,7 +1010,7 @@ function renderTable() {
     header += `<th>Actions</th></tr>`;
     uploadTable.innerHTML = header;
 
-    // ----- TABLE ROWS -----
+    /* ---------- TABLE ROWS ---------- */
     data.forEach(r => {
         let row = `
             <tr>
@@ -963,35 +1020,29 @@ function renderTable() {
                 <td>${r.duplicate_records}</td>
         `;
 
-        // Admin-only uploader info
         if (currentUser.role === "admin") {
             row += `<td>${r.uploaded_by}</td>`;
         }
 
+        const canDelete =
+            currentUser.role === "admin" ||
+            r.created_by_user_id === currentUser.id;
+
         row += `
-                <td>
-                    <button class="view"
+            <td>
+                <div class="action-group">
+                    <button class="btn-view"
                         onclick="location.href='/preview.html?upload_id=${r.upload_id}'">
                         View
                     </button>
-        `;
 
-        // Delete only for admin or owner
-        if (
-            currentUser.role === "admin" ||
-            r.created_by_user_id === currentUser.id
-        ) {
-            row += `
-                <button class="delete"
-                    onclick="del(${r.upload_id})">
-                    Delete
-                </button>
-            `;
-        }
-
-        row += `
-                </td>
-            </tr>
+                    <button class="btn-delete ${canDelete ? "" : "disabled"}"
+                        ${canDelete ? `onclick="del(${r.upload_id})"` : "disabled"}>
+                        Delete
+                    </button>
+                </div>
+            </td>
+        </tr>
         `;
 
         uploadTable.innerHTML += row;
@@ -999,6 +1050,9 @@ function renderTable() {
 
     renderPagination(totalPages);
 }
+
+
+
 
 
 function renderPagination(totalPages) {
@@ -1045,17 +1099,6 @@ function addPage(n) {
     };
     pagination.appendChild(b);
 }
-
-/* ---------- CATEGORY CRUD ---------- */
-// async function addCategory() {
-//     const name = newCategory.value.trim();
-//     if (!name) return;
-//     await fetch(`/categories?name=${encodeURIComponent(name)}`, {
-//         method: "POST"
-//     });
-//     newCategory.value = "";
-//     loadCategories();
-// }
 
 async function renameCategory(id, oldName) {
     const name = prompt("Rename category", oldName);
