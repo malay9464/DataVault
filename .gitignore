@@ -7,3 +7,10 @@ backend/venv/
 .idea/
 Thumbs.db
 .DS_Store
+# Runtime logs
+backend/logs/
+*.csv
+
+# SQL local scripts (optional)
+log_table.sql
+sql2.sql
