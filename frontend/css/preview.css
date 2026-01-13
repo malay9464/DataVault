@@ -1,0 +1,90 @@
+body {
+    font-family: "Segoe UI";
+    background: #f4f6f8;
+    margin: 0;
+}
+
+.container {
+    width: 95%;
+    margin: 30px auto;
+    background: white;
+    padding: 24px;
+    border-radius: 14px;
+}
+
+h2 {
+    margin-top: 0;
+}
+
+/* ---------- CONTROLS ---------- */
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+select,
+button {
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+}
+
+/* ---------- TABLE ---------- */
+.table-wrapper {
+    overflow-x: auto;
+    max-height: 70vh;
+}
+
+table {
+    width: 100%;
+    min-width: 1200px;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 9px;
+    border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+
+th {
+    background: #2563eb;
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+tr:hover td {
+    background: #f1f5f9;
+}
+
+/* ---------- PAGINATION ---------- */
+.pagination {
+    margin-top: 18px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.pagination button {
+    background: white;
+    color: #111;
+    border: 1px solid #ccc;
+}
+
+.pagination button.active {
+    background: #2563eb;
+    color: white;
+    font-weight: bold;
+}

@@ -1,0 +1,99 @@
+body {
+    margin: 0;
+    height: 100vh;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ---------- CARD ---------- */
+.login-card {
+    width: 360px;
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ---------- HEADER ---------- */
+.login-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.login-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #0f172a;
+}
+
+.login-header p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: #64748b;
+}
+
+/* ---------- FIELDS ---------- */
+.field {
+    margin-bottom: 16px;
+}
+
+.field label {
+    font-size: 13px;
+    color: #475569;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.field input {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5f5;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+
+/* ---------- BUTTON ---------- */
+.login-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background: #2563eb;
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.login-btn:hover {
+    background: #1e40af;
+    transform: translateY(-1px);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
