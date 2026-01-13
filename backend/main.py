@@ -45,11 +45,9 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 
     return {"access_token": token, "token_type": "bearer"}
 
-
 # ---------------- UTIL ----------------
 def clean_nan(row):
     return {k: (None if pd.isna(v) else v) for k, v in row.items()}
-
 
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
 @app.get("/categories")
