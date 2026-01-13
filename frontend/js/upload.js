@@ -23,6 +23,13 @@ const pagination = document.getElementById("pagination");
 const newCategory = document.getElementById("newCategory");
 const allCountSpan = document.getElementById("allCount");
 const uncatCountSpan = document.getElementById("uncatCount");
+const totalMin = document.getElementById("totalMin");
+const totalMax = document.getElementById("totalMax");
+const dupMin = document.getElementById("dupMin");
+const dupMax = document.getElementById("dupMax");
+const dateFrom = document.getElementById("dateFrom");
+const dateTo = document.getElementById("dateTo");
+
 
 function authFetch(url, options = {}) {
     return fetch(url, {
@@ -42,29 +49,30 @@ fileInput.onchange = () => {
 function buildSearchParams() {
     const p = new URLSearchParams();
 
-    if (searchInput.value.trim())
+    if (searchInput && searchInput.value.trim())
         p.append("filename", searchInput.value.trim());
 
-    if (totalMin.value)
+    if (totalMin && totalMin.value)
         p.append("total_min", totalMin.value);
 
-    if (totalMax.value)
+    if (totalMax && totalMax.value)
         p.append("total_max", totalMax.value);
 
-    if (dupMin.value)
+    if (dupMin && dupMin.value)
         p.append("dup_min", dupMin.value);
 
-    if (dupMax.value)
+    if (dupMax && dupMax.value)
         p.append("dup_max", dupMax.value);
 
-    if (dateFrom.value)
+    if (dateFrom && dateFrom.value)
         p.append("date_from", dateFrom.value);
 
-    if (dateTo.value)
+    if (dateTo && dateTo.value)
         p.append("date_to", dateTo.value);
 
     return p.toString();
 }
+
 
 async function addCategoryPrompt() {
     const name = prompt("Enter category name");
@@ -234,26 +242,28 @@ async function createUser() {
 
 async function loadUser() {
     const res = await authFetch("/me");
+    if (!res.ok) {
+        logout();
+        return;
+    }
+
     currentUser = await res.json();
 
     if (currentUser.role !== "admin") {
-        // Hide admin-only buttons
         document
           .querySelectorAll(".new-category-btn")
           .forEach(b => b.style.display = "none");
 
-        // Hide category actions (rename/delete)
         document
           .querySelectorAll(".cat-actions")
           .forEach(a => a.style.display = "none");
     }
+
     if (currentUser.role === "user") {
-    document.getElementById("myUploadsTab").style.display = "flex";
+        document.getElementById("myUploadsTab").style.display = "flex";
+    }
 }
 
-}
-
-loadUser();
 
 /* ---------- LOAD UPLOADS ---------- */
 async function loadUploads() {
@@ -453,8 +463,13 @@ function logout() {
     window.location.href = "/static/login.html";
 }
 
-loadCategories();
-loadUploads();
+async function initPage() {
+    await loadUser();        // sets currentUser
+    await loadCategories();  // fills categoriesCache
+    await loadUploads();     // now SAFE
+}
+
+initPage();
 
 async function resetPasswordPrompt(userId, email) {
     const pwd = prompt(`Enter new password for ${email}`);
