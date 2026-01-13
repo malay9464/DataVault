@@ -133,8 +133,8 @@ function addPageButton(n) {
 }
 
 /* ---------- EXPORT ---------- */
-function exportData() {
-    authFetch(`/export?upload_id=${uploadId}`)
+function exportData(format) {
+    authFetch(`/export?upload_id=${uploadId}&format=${format}`)
         .then(r => {
             if (!r.ok) throw new Error("Unauthorized");
             return r.blob();
@@ -143,7 +143,10 @@ function exportData() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `cleaned_${uploadId}.csv`;
+            a.download =
+                format === "csv"
+                    ? `cleaned_${uploadId}.csv`
+                    : `cleaned_${uploadId}.xlsx`;
             a.click();
             URL.revokeObjectURL(url);
         })
@@ -154,5 +157,5 @@ function exportData() {
         });
 }
 
-/* ---------- INIT ---------- */
+
 loadData();

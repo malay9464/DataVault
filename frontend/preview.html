@@ -13,19 +13,29 @@
     <h2>Uploaded Data</h2>
 
     <div class="controls">
-        <div>
-            Show
-            <select id="pageSize">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-            </select>
-            rows
-        </div>
-
-        <button onclick="exportData()">Export CSV</button>
+    <div class="left-controls">
+        Show
+        <select id="pageSize">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+        </select>
+        rows
     </div>
+
+    <div class="export-controls">
+        <select id="exportFormat">
+            <option value="csv">CSV</option>
+            <option value="excel">Excel</option>
+        </select>
+
+        <button onclick="exportData(document.getElementById('exportFormat').value)">
+            Export
+        </button>
+    </div>
+</div>
+
 
     <div class="table-wrapper">
         <table id="dataTable"></table>

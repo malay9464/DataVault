@@ -16,7 +16,8 @@ from logger import log_to_csv
 from auth import authenticate_user, create_access_token, get_current_user
 from permissions import can_delete_upload, admin_only
 from security import hash_password
-
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 app = FastAPI()
 
@@ -357,6 +358,7 @@ def reset_user_password(
 @app.get("/export")
 def export_data(
     upload_id: int,
+    format: str = Query("csv", regex="^(csv|excel)$"),
     user: dict = Depends(get_current_user)
 ):
     with engine.begin() as conn:
@@ -364,26 +366,46 @@ def export_data(
             text("""
                 SELECT row_data
                 FROM cleaned_data
-                WHERE upload_id=:uid
+                WHERE upload_id = :uid
                 ORDER BY id
             """),
             {"uid": upload_id}
         ).fetchall()
 
     if not rows:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="No data found")
 
     df = pd.DataFrame([r.row_data for r in rows])
-    stream = io.StringIO()
-    df.to_csv(stream, index=False)
-    stream.seek(0)
+
+    # ---------- CSV ----------
+    if format == "csv":
+        stream = io.StringIO()
+        df.to_csv(stream, index=False)
+        stream.seek(0)
+
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition":
+                f"attachment; filename=cleaned_{upload_id}.csv"
+            }
+        )
+
+    # ---------- EXCEL ----------
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Cleaned Data")
+    output.seek(0)
 
     return StreamingResponse(
-        stream,
-        media_type="text/csv",
+        output,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
         headers={
             "Content-Disposition":
-            f"attachment; filename=cleaned_{upload_id}.csv"
+            f"attachment; filename=cleaned_{upload_id}.xlsx"
         }
     )
 
