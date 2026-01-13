@@ -441,6 +441,31 @@ def create_category(
 
     return {"success": True}
 
+@app.put("/categories/{category_id}")
+def rename_category(
+    category_id: int,
+    name: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+        res = conn.execute(
+            text("""
+                UPDATE categories
+                SET name = :name
+                WHERE id = :cid
+            """),
+            {"name": name.strip(), "cid": category_id}
+        )
+
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+    return {"success": True}
+
+
 # ---------------- STATIC ----------------
 @app.get("/")
 def serve_upload():
@@ -502,3 +527,37 @@ def me(current_user: dict = Depends(get_current_user)):
 @app.get("/users.html")
 def serve_users():
     return FileResponse(os.path.join("..", "frontend", "users.html"))
+
+@app.delete("/categories/{category_id}")
+def delete_category(
+    category_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+        count = conn.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM upload_log
+                WHERE category_id = :cid
+            """),
+            {"cid": category_id}
+        ).scalar()
+
+        if count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Category has uploads"
+            )
+
+        res = conn.execute(
+            text("DELETE FROM categories WHERE id = :cid"),
+            {"cid": category_id}
+        )
+
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+    return {"success": True}
