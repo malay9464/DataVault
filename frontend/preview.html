@@ -30,9 +30,11 @@
             <option value="excel">Excel</option>
         </select>
 
-        <button onclick="exportData(document.getElementById('exportFormat').value)">
-            Export
+        <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
+            <span id="exportText">Export</span>
+            <span id="exportSpinner" class="spinner" style="display:none;"></span>
         </button>
+
     </div>
 </div>
 

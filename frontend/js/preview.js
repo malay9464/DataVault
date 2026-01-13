@@ -134,9 +134,18 @@ function addPageButton(n) {
 
 /* ---------- EXPORT ---------- */
 function exportData(format) {
+    const btn = document.getElementById("exportBtn");
+    const text = document.getElementById("exportText");
+    const spinner = document.getElementById("exportSpinner");
+
+    // Disable button + show spinner
+    btn.disabled = true;
+    spinner.style.display = "inline-block";
+    text.innerText = "Exporting...";
+
     authFetch(`/export?upload_id=${uploadId}&format=${format}`)
         .then(r => {
-            if (!r.ok) throw new Error("Unauthorized");
+            if (!r.ok) throw new Error("Export failed");
             return r.blob();
         })
         .then(blob => {
@@ -144,18 +153,25 @@ function exportData(format) {
             const a = document.createElement("a");
             a.href = url;
             a.download =
-                format === "csv"
-                    ? `cleaned_${uploadId}.csv`
-                    : `cleaned_${uploadId}.xlsx`;
+                format === "excel"
+                    ? `cleaned_${uploadId}.xlsx`
+                    : `cleaned_${uploadId}.csv`;
             a.click();
             URL.revokeObjectURL(url);
         })
         .catch(() => {
-            alert("Session expired. Please login again.");
+            alert("Export failed or session expired");
             localStorage.removeItem("access_token");
             window.location.href = "/static/login.html";
+        })
+        .finally(() => {
+            // Restore button state
+            btn.disabled = false;
+            spinner.style.display = "none";
+            text.innerText = "Export";
         });
 }
+
 
 
 loadData();
