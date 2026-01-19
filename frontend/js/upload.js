@@ -123,17 +123,14 @@ async function loadCategories() {
     let uncatCount = 0;
 
     cats.forEach(c => {
-        // ✅ COUNT LOGIC (must happen for ALL categories)
         allCount += c.uploads;
 
         if (c.name.toLowerCase() === "uncategorized") {
             uncatCount = c.uploads;
         }
 
-        // ✅ ALWAYS add to upload dropdown
         categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
 
-        // ❌ DO NOT show Uncategorized in Categories list
         if (c.name.toLowerCase() === "uncategorized") {
             return;
         }
@@ -264,7 +261,6 @@ async function loadUser() {
     }
 }
 
-
 /* ---------- LOAD UPLOADS ---------- */
 async function loadUploads() {
     let url = "";
@@ -312,9 +308,6 @@ async function loadUploads() {
     filteredUploads = [...allUploads];
     renderTable();
 }
-
-
-
 
 /* ---------- TABLE + PAGINATION ---------- */
 function renderTable() {
@@ -378,10 +371,6 @@ function renderTable() {
 
     renderPagination(totalPages);
 }
-
-
-
-
 
 function renderPagination(totalPages) {
     pagination.innerHTML = "";

@@ -11,13 +11,14 @@ from datetime import date
 import pandas as pd
 import io, json, os, time
 from users import router as users_router
-from db import engine
+from db import engine, copy_cleaned_data
 from logger import log_to_csv
 from auth import authenticate_user, create_access_token, get_current_user
 from permissions import can_delete_upload, admin_only
 from security import hash_password
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+
 
 app = FastAPI()
 
@@ -68,7 +69,6 @@ def list_categories():
     ]
 
 
-# ---------------- UPLOAD ----------------
 @app.post("/upload")
 async def upload_file(
     category_id: int = Query(...),
@@ -78,50 +78,89 @@ async def upload_file(
     contents = await file.read()
     name = file.filename.lower()
 
+    upload_id = int(time.time())
+
+    total_records = 0
+    duplicate_records = 0
+    seen_hashes = set()
+
+    # ---------- 1. DROP INDEX ----------
+    with engine.connect() as conn:
+        conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
+        conn.commit()
+
+    # ---------- 2. STREAM FILE SAFELY ----------
+
+    def csv_chunk_reader():
+        """
+        Try UTF-8 first, fallback to latin1 (Windows CSVs)
+        """
+        try:
+            return pd.read_csv(
+                io.BytesIO(contents),
+                chunksize=100_000,
+                encoding="utf-8"
+            )
+        except UnicodeDecodeError:
+            return pd.read_csv(
+                io.BytesIO(contents),
+                chunksize=100_000,
+                encoding="latin1"
+            )
+
+    # CSV handling (streaming)
     if name.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(contents))
+
+        reader = csv_chunk_reader()
+
+        for chunk in reader:
+
+            total_records += len(chunk)
+
+            chunk = chunk.drop_duplicates()
+
+            chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
+            chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
+
+            seen_hashes.update(chunk["__hash"])
+            chunk = chunk.drop(columns=["__hash"])
+
+            copy_cleaned_data(engine, upload_id, chunk)
+
+    # Excel handling (cannot stream, but still fast)
     elif name.endswith(".xls") or name.endswith(".xlsx"):
+
         df = pd.read_excel(io.BytesIO(contents))
+
+        total_records = len(df)
+
+        df = df.drop_duplicates()
+
+        df["__hash"] = df.astype(str).agg("|".join, axis=1)
+        df = df.drop_duplicates(subset="__hash")
+
+        duplicate_records = total_records - len(df)
+
+        df = df.drop(columns=["__hash"])
+
+        copy_cleaned_data(engine, upload_id, df)
+
     else:
         raise HTTPException(status_code=400, detail="Unsupported file")
 
-    total_records = len(df)
-    cleaned_df = df.drop_duplicates()
-    duplicate_records = total_records - len(cleaned_df)
-    upload_id = int(time.time())
+    if name.endswith(".csv"):
+        duplicate_records = total_records - len(seen_hashes)
 
-    BATCH_SIZE = 5000
-    batch = []
+    # ---------- 3. RECREATE INDEX ----------
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE INDEX idx_cleaned_data_upload_id
+            ON cleaned_data(upload_id)
+        """))
+        conn.commit()
 
-    with engine.begin() as conn:
-        # -------- BATCH INSERT CLEANED DATA --------
-        for _, row in cleaned_df.iterrows():
-            batch.append({
-                "uid": upload_id,
-                "data": json.dumps(clean_nan(row.to_dict()), default=str)
-            })
-
-            if len(batch) == BATCH_SIZE:
-                conn.execute(
-                    text("""
-                        INSERT INTO cleaned_data (upload_id, row_data)
-                        VALUES (:uid, :data)
-                    """),
-                    batch
-                )
-                batch.clear()
-
-        # insert remaining rows
-        if batch:
-            conn.execute(
-                text("""
-                    INSERT INTO cleaned_data (upload_id, row_data)
-                    VALUES (:uid, :data)
-                """),
-                batch
-            )
-
-        # -------- INSERT UPLOAD LOG --------
+    # ---------- 4. INSERT UPLOAD LOG ----------
+    with engine.connect() as conn:
         conn.execute(
             text("""
                 INSERT INTO upload_log
@@ -140,9 +179,12 @@ async def upload_file(
                 "user_id": user["id"]
             }
         )
+        conn.commit()
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
     return {"success": True}
+
+
 
 
 
