@@ -6,6 +6,19 @@
     <!-- CSS -->
     <link rel="stylesheet" href="/static/css/preview.css">
 </head>
+<div id="relatedModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Related Records (Within This File)</h3>
+    <p id="relatedMatchInfo"></p>
+
+    <table id="relatedTable">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+
+    <button onclick="closeRelatedModal()">Close</button>
+  </div>
+</div>
 
 <body>
 
@@ -34,6 +47,8 @@
             <span id="exportText">Export</span>
             <span id="exportSpinner" class="spinner" style="display:none;"></span>
         </button>
+
+        <button onclick="openRelatedPage()">Related Records</button>
 
     </div>
 </div>

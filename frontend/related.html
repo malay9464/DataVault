@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Related Records</title>
+    <link rel="stylesheet" href="/static/css/preview.css">
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+
+    <!-- Header bar (same as preview) -->
+    <div class="header">
+        <h2>Related Records (This File)</h2>
+        <div class="actions">
+            <input type="text"
+                   id="searchValue"
+                   placeholder="Enter Email or Phone"
+                   style="padding:8px; width:250px;">
+            <button onclick="searchRelated()">Search</button>
+            <button onclick="loadRelatedSummary()">Reset</button>
+        </div>
+    </div>
+
+    <!-- Table wrapper EXACTLY like preview -->
+    <div class="table-wrapper">
+        <table id="relatedTable" class="data-table"></table>
+    </div>
+
+    <!-- Pagination bar EXACTLY like preview -->
+    <div id="relatedPagination" class="pagination"></div>
+
+  </div>
+</div>
+
+<script src="/static/js/related.js"></script>
+</body>
+</html>

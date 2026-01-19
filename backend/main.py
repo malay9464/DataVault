@@ -19,6 +19,15 @@ from security import hash_password
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
+# ---------------- CANONICAL FIELD KEYWORDS ----------------
+
+EMAIL_KEYWORDS = ["email", "e-mail", "mail"]
+
+PHONE_KEYWORDS = ["phone", "mobile", "contact", "cell"]
+
+NAME_FIELDS = {
+    "name", "full_name", "customer_name", "client_name", "first_name", "fullname"
+}
 
 app = FastAPI()
 
@@ -50,6 +59,63 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 # ---------------- UTIL ----------------
 def clean_nan(row):
     return {k: (None if pd.isna(v) else v) for k, v in row.items()}
+
+# ---------------- FIELD NORMALIZATION ----------------
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    # standardize column names
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
+
+
+def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensures every row has canonical keys: email, phone, name
+    using semantic column matching (real-world safe)
+    """
+
+    # normalize column names
+    df.columns = [
+        c.strip().lower().replace(" ", "_").replace("-", "_")
+        for c in df.columns
+    ]
+
+    # ensure canonical columns exist
+    for col in ["email", "phone", "name"]:
+        if col not in df.columns:
+            df[col] = None
+
+    def extract_canonical(row):
+        email = None
+        phone = None
+        name = None
+
+        for col, val in row.items():
+            if pd.isna(val):
+                continue
+
+            col_l = col.lower()
+
+            # EMAIL DETECTION
+            if email is None and any(k in col_l for k in EMAIL_KEYWORDS):
+                email = str(val).strip().lower()
+
+            # PHONE DETECTION
+            if phone is None and any(k in col_l for k in PHONE_KEYWORDS):
+                phone = str(val).strip()
+
+            # NAME DETECTION
+            if name is None and "name" in col_l:
+                name = str(val).strip()
+
+        row["email"] = email
+        row["phone"] = phone
+        row["name"] = name
+
+        return row
+
+    return df.apply(extract_canonical, axis=1)
+
 
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
 @app.get("/categories")
@@ -117,6 +183,8 @@ async def upload_file(
 
             total_records += len(chunk)
 
+            chunk = normalize_dataframe(chunk)
+
             chunk = chunk.drop_duplicates()
 
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
@@ -127,12 +195,15 @@ async def upload_file(
 
             copy_cleaned_data(engine, upload_id, chunk)
 
+
     # Excel handling (cannot stream, but still fast)
     elif name.endswith(".xls") or name.endswith(".xlsx"):
 
         df = pd.read_excel(io.BytesIO(contents))
 
         total_records = len(df)
+
+        df = normalize_dataframe(df)
 
         df = df.drop_duplicates()
 
@@ -327,7 +398,7 @@ def preview_data(
 
         rows = conn.execute(
             text("""
-                SELECT row_data
+                SELECT id, row_data
                 FROM cleaned_data
                 WHERE upload_id=:uid
                 ORDER BY id
@@ -339,12 +410,18 @@ def preview_data(
     if not rows:
         return {"columns": [], "rows": [], "total_records": total}
 
-    data = [r.row_data for r in rows]
     return {
-        "columns": list(data[0].keys()),
-        "rows": [list(d.values()) for d in data],
+        "columns": list(rows[0].row_data.keys()),
+        "rows": [
+            {
+                "id": r.id,
+                "values": list(r.row_data.values())
+            }
+            for r in rows
+        ],
         "total_records": total
     }
+
 
 @app.get("/admin/users")
 def list_users(current_user: dict = Depends(get_current_user)):
@@ -623,3 +700,141 @@ def delete_category(
             raise HTTPException(status_code=404, detail="Category not found")
 
     return {"success": True}
+
+# ---------------- RELATED RECORDS (FILE SCOPED) ----------------
+
+@app.get("/related-records")
+def related_records(
+    upload_id: int,
+    row_id: int,
+    user: dict = Depends(get_current_user)
+):
+    with engine.begin() as conn:
+
+        # Step 1: Get base record identifiers
+        base = conn.execute(
+            text("""
+                SELECT
+                    row_data->>'email' AS email,
+                    row_data->>'phone' AS phone
+                FROM cleaned_data
+                WHERE id = :rid
+                  AND upload_id = :uid
+            """),
+            {"rid": row_id, "uid": upload_id}
+        ).fetchone()
+
+        if not base:
+            raise HTTPException(status_code=404, detail="Record not found")
+
+        email = base.email
+        phone = base.phone
+
+        # Step 2: Find related records inside SAME file
+        rows = conn.execute(
+            text("""
+                SELECT id, row_data
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                  AND (
+                        (:email IS NOT NULL AND row_data->>'email' = :email)
+                     OR (:phone IS NOT NULL AND row_data->>'phone' = :phone)
+                  )
+                ORDER BY id
+            """),
+            {
+                "uid": upload_id,
+                "email": email,
+                "phone": phone
+            }
+        ).fetchall()
+
+    return {
+        "match_email": email,
+        "match_phone": phone,
+        "total": len(rows),
+        "records": [
+            {"id": r.id, "data": r.row_data}
+            for r in rows
+        ]
+    }
+
+# ---------------- RELATED RECORDS SUMMARY ----------------
+
+@app.get("/related-summary")
+def related_summary(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                WITH base AS (
+                    SELECT id,
+                           row_data,
+                           lower(trim(row_data->>'email')) AS email,
+                           regexp_replace(row_data->>'phone', '\\D', '', 'g') AS phone,
+                           lower(trim(row_data->>'name')) AS name
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                ),
+                related_keys AS (
+                    SELECT email, phone, name
+                    FROM base
+                    GROUP BY email, phone, name
+                    HAVING
+                        COUNT(*) > 1
+                        OR email IN (
+                            SELECT email FROM base
+                            GROUP BY email HAVING COUNT(*) > 1
+                        )
+                        OR phone IN (
+                            SELECT phone FROM base
+                            GROUP BY phone HAVING COUNT(*) > 1
+                        )
+                )
+                SELECT b.id, b.row_data
+                FROM base b
+                JOIN related_keys r
+                  ON (
+                        b.email IS NOT NULL AND b.email = r.email
+                     OR b.phone IS NOT NULL AND b.phone = r.phone
+                     OR b.name IS NOT NULL AND b.name = r.name
+                  )
+                ORDER BY b.id
+            """),
+            {"uid": upload_id}
+        ).fetchall()
+
+    return {
+        "total": len(rows),
+        "records": [{"id": r.id, "data": r.row_data} for r in rows]
+    }
+
+# ---------------- RELATED RECORD SEARCH ----------------
+
+@app.get("/related-search")
+def related_search(
+    upload_id: int,
+    value: str,
+    user: dict = Depends(get_current_user)
+):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, row_data
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                  AND (
+                        LOWER(row_data->>'email') = LOWER(:val)
+                     OR row_data->>'phone' = :val
+                  )
+                ORDER BY id
+            """),
+            {"uid": upload_id, "val": value}
+        ).fetchall()
+
+    return {
+        "total": len(rows),
+        "records": [{"id": r.id, "data": r.row_data} for r in rows]
+    }

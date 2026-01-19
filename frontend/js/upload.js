@@ -153,7 +153,7 @@ async function loadCategories() {
     allCountSpan.innerText = allCount;
     uncatCountSpan.innerText = uncatCount;
 }
-                     
+
 /* ---------- FILTER ---------- */
 function applyFilter(type, el) {
     currentFilter = type;

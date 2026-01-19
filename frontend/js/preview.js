@@ -58,15 +58,17 @@ function renderTable(data) {
         return;
     }
 
+    // Header
     table.innerHTML =
         "<tr>" +
         data.columns.map(c => `<th>${c}</th>`).join("") +
         "</tr>";
 
+    // Rows
     data.rows.forEach(r => {
         table.innerHTML +=
             "<tr>" +
-            r.map(v => `<td>${v ?? ""}</td>`).join("") +
+            r.values.map(v => `<td>${v ?? ""}</td>`).join("") +
             "</tr>";
     });
 }
@@ -172,6 +174,58 @@ function exportData(format) {
         });
 }
 
-
-
 loadData();
+
+/* ---------- RELATED RECORDS ---------- */
+async function viewRelated(rowId) {
+    const res = await authFetch(
+        `/related-records?upload_id=${uploadId}&row_id=${rowId}`
+    );
+
+    if (!res.ok) {
+        alert("Failed to load related records");
+        return;
+    }
+
+    const data = await res.json();
+
+    document.getElementById("relatedMatchInfo").innerText =
+        `Matched Email: ${data.match_email || "N/A"} | ` +
+        `Matched Phone: ${data.match_phone || "N/A"} | ` +
+        `Total: ${data.total}`;
+
+    const table = document.getElementById("relatedTable");
+    const thead = table.querySelector("thead");
+    const tbody = table.querySelector("tbody");
+
+    thead.innerHTML = "";
+    tbody.innerHTML = "";
+
+    if (data.records.length === 0) {
+        tbody.innerHTML = "<tr><td>No related records</td></tr>";
+    } else {
+        const columns = Object.keys(data.records[0].data);
+
+        thead.innerHTML =
+            "<tr>" +
+            columns.map(c => `<th>${c}</th>`).join("") +
+            "</tr>";
+
+        data.records.forEach(r => {
+            tbody.innerHTML +=
+                "<tr>" +
+                columns.map(c => `<td>${r.data[c] ?? ""}</td>`).join("") +
+                "</tr>";
+        });
+    }
+
+    document.getElementById("relatedModal").classList.remove("hidden");
+}
+
+function closeRelatedModal() {
+    document.getElementById("relatedModal").classList.add("hidden");
+}
+
+function openRelatedPage() {
+    window.location.href = `/static/related.html?upload_id=${uploadId}`;
+}
