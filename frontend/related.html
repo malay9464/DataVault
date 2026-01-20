@@ -40,6 +40,13 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        
+        .group-header:hover {
+            opacity: 0.9;
         }
         
         .group-header.email {
@@ -58,6 +65,15 @@
             font-weight: 600;
         }
         
+        .expand-icon {
+            font-size: 18px;
+            transition: transform 0.3s ease;
+        }
+        
+        .expand-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+        
         .group-badge {
             background: rgba(255, 255, 255, 0.3);
             padding: 4px 12px;
@@ -67,6 +83,14 @@
         
         .group-records {
             background: white;
+            max-height: 500px;
+            overflow-y: auto;
+            transition: max-height 0.3s ease;
+        }
+        
+        .group-records.collapsed {
+            max-height: 0;
+            overflow: hidden;
         }
         
         .group-records table {
@@ -80,6 +104,9 @@
             text-align: left;
             font-weight: 600;
             border-bottom: 2px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+            z-index: 5;
         }
         
         .group-records td {

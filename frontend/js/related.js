@@ -23,8 +23,8 @@ if (!uploadId) {
 }
 
 let currentPage = 1;
-let pageSize = 20; // Fewer groups per page since each group has multiple records
-let currentView = 'grouped'; // 'grouped' or 'flat'
+let pageSize = 20;
+let currentView = 'grouped';
 let isSearchMode = false;
 
 // ---------------- LOAD STATISTICS ----------------
@@ -70,31 +70,31 @@ async function loadGroupedView() {
 
 // ---------------- RENDER GROUPED VIEW ----------------
 function renderGroupedView(data) {
-    const container = document.getElementById("resultsContainer");
+    const container = document.getElementById('resultsContainer');
     
-    if (data.groups.length === 0) {
+    if (!data.groups || data.groups.length === 0) {
         container.innerHTML = '<div class="no-results">No related records found</div>';
         return;
     }
     
     let html = '';
     
-    data.groups.forEach(group => {
-        const groupClass = group.match_type === 'email' ? 'email' : 'phone';
-        const icon = group.match_type === 'email' ? '📧' : '📱';
+    data.groups.forEach((group, index) => {
+        const groupId = `group-${index}`;
+        const recordCount = group.records.length;
+        const isEmail = group.match_type === 'email';
+        const icon = isEmail ? '📧' : '📱';
         
         html += `
             <div class="group-container">
-                <div class="group-header ${groupClass}">
+                <div class="group-header ${group.match_type}" onclick="toggleGroup('${groupId}')">
                     <div class="group-title">
-                        <span>${icon}</span>
-                        <span>${group.match_key}</span>
-                    </div>
-                    <div class="group-badge">
-                        ${group.record_count} records
+                        <span class="expand-icon" id="expand-${groupId}">▼</span>
+                        <span>${icon} ${group.match_key}</span>
+                        <span class="group-badge">${recordCount} records</span>
                     </div>
                 </div>
-                <div class="group-records">
+                <div class="group-records" id="records-${groupId}">
                     ${renderGroupTable(group.records)}
                 </div>
             </div>
@@ -104,38 +104,50 @@ function renderGroupedView(data) {
     container.innerHTML = html;
 }
 
+// ---------------- TOGGLE GROUP ----------------
+function toggleGroup(groupId) {
+    const recordsDiv = document.getElementById(`records-${groupId}`);
+    const expandIcon = document.getElementById(`expand-${groupId}`);
+    
+    recordsDiv.classList.toggle('collapsed');
+    expandIcon.classList.toggle('collapsed');
+}
+
+// ---------------- RENDER GROUP TABLE ----------------
 function renderGroupTable(records) {
     if (records.length === 0) return '<p>No records</p>';
     
     const preferredOrder = [
-                    "name",
-                    "email",
-                    "phone",
-                    "city",
-                    "address1",
-                    "address2",
-                    "position",
-                    "zip"
-                ];
+        "name",
+        "email",
+        "phone",
+        "city",
+        "address",
+        "address1",
+        "address2",
+        "position",
+        "zip",
+        "status"
+    ];
 
-        const allColumns = Object.keys(records[0].data);
+    const allColumns = records[0].data ? Object.keys(records[0].data) : [];
 
-        const columns = [
-            ...preferredOrder.filter(c => allColumns.includes(c)),
-            ...allColumns.filter(c => !preferredOrder.includes(c))
-        ];
-        ;
+    const columns = [
+        ...preferredOrder.filter(c => allColumns.includes(c)),
+        ...allColumns.filter(c => !preferredOrder.includes(c))
+    ];
     
     let html = '<table>';
     
     // Header
-    html += '<tr>';
+    html += '<thead><tr>';
     columns.forEach(col => {
         html += `<th>${col}</th>`;
     });
-    html += '</tr>';
+    html += '</tr></thead>';
     
     // Rows
+    html += '<tbody>';
     records.forEach(record => {
         html += '<tr>';
         columns.forEach(col => {
@@ -147,6 +159,7 @@ function renderGroupTable(records) {
         });
         html += '</tr>';
     });
+    html += '</tbody>';
     
     html += '</table>';
     return html;
@@ -174,16 +187,61 @@ async function searchRelated() {
         
         const data = await res.json();
         
-        // Show as flat view for search results
-        renderFlatView(data.records);
-        
         const container = document.getElementById("resultsContainer");
-        container.insertAdjacentHTML('afterbegin', `
+        
+        if (data.records.length === 0) {
+            container.innerHTML = '<div class="no-results">No records found for this search</div>';
+            return;
+        }
+        
+        let html = `
             <div style="padding: 15px; background: #fef3c7; border-radius: 6px; margin-bottom: 20px;">
                 <strong>Search Results:</strong> Found ${data.total_records} records matching "${searchValue}"
             </div>
-        `);
+        `;
         
+        html += '<table>';
+        
+        const preferredOrder = [
+            "name",
+            "email",
+            "phone",
+            "city",
+            "address",
+            "address1",
+            "address2",
+            "status"
+        ];
+
+        const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
+        const columns = [
+            ...preferredOrder.filter(c => allColumns.includes(c)),
+            ...allColumns.filter(c => !preferredOrder.includes(c))
+        ];
+        
+        html += '<thead><tr>';
+        columns.forEach(col => {
+            html += `<th>${col}</th>`;
+        });
+        html += '</tr></thead>';
+        
+        html += '<tbody>';
+        data.records.forEach(record => {
+            html += '<tr>';
+            columns.forEach(col => {
+                let value = record.data[col];
+                if (value === null || value === undefined || value === "") {
+                    value = "-";
+                }
+                html += `<td>${value}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody>';
+        
+        html += '</table>';
+        
+        container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
         
     } catch (err) {
@@ -197,12 +255,7 @@ function resetSearch() {
     document.getElementById("searchValue").value = "";
     isSearchMode = false;
     currentPage = 1;
-    
-    if (currentView === 'grouped') {
-        loadGroupedView();
-    } else {
-        loadFlatView();
-    }
+    loadGroupedView();
 }
 
 // ---------------- PAGINATION ----------------
@@ -219,8 +272,7 @@ function renderPagination(total, page, size) {
     prevBtn.disabled = page === 1;
     prevBtn.onclick = () => {
         currentPage--;
-        if (currentView === 'grouped') loadGroupedView();
-        else loadFlatView();
+        loadGroupedView();
     };
     pagination.appendChild(prevBtn);
     
@@ -261,8 +313,7 @@ function renderPagination(total, page, size) {
     nextBtn.disabled = page === totalPages;
     nextBtn.onclick = () => {
         currentPage++;
-        if (currentView === 'grouped') loadGroupedView();
-        else loadFlatView();
+        loadGroupedView();
     };
     pagination.appendChild(nextBtn);
 }
@@ -273,8 +324,7 @@ function addPageButton(pageNum, currentPageNum) {
     btn.className = pageNum === currentPageNum ? "active" : "";
     btn.onclick = () => {
         currentPage = pageNum;
-        if (currentView === 'grouped') loadGroupedView();
-        else loadFlatView();
+        loadGroupedView();
     };
     document.getElementById("relatedPagination").appendChild(btn);
 }
