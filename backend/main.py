@@ -42,6 +42,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def detect_relation_fields(conn, upload_id: int):
+    stats = conn.execute(
+        text("""
+            SELECT
+                COUNT(*) AS total,
+                COUNT(row_data->>'email') AS email_cnt,
+                COUNT(row_data->>'phone') AS phone_cnt
+            FROM cleaned_data
+            WHERE upload_id = :uid
+        """),
+        {"uid": upload_id}
+    ).fetchone()
+
+    fields = []
+
+    if stats.total == 0:
+        return fields
+
+    if stats.email_cnt / stats.total >= 0.05:
+        fields.append("email")
+
+    if stats.phone_cnt / stats.total >= 0.05:
+        fields.append("phone")
+
+    return fields
+
 # ---------------- AUTH ----------------
 @app.post("/login")
 def login(form: OAuth2PasswordRequestForm = Depends()):
@@ -69,52 +95,51 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensures every row has canonical keys: email, phone, name
-    using semantic column matching (real-world safe)
-    """
-
-    # normalize column names
+    # Normalize column names once
     df.columns = [
         c.strip().lower().replace(" ", "_").replace("-", "_")
         for c in df.columns
     ]
 
-    # ensure canonical columns exist
-    for col in ["email", "phone", "name"]:
-        if col not in df.columns:
-            df[col] = None
+    email_cols = [
+    c for c in df.columns
+    if any(k in c for k in ["email", "mail"])
+    ]
+    phone_cols = [c for c in df.columns if any(k in c for k in ["phone", "mobile", "contact"])]
+    name_cols  = [c for c in df.columns if "name" in c]
 
-    def extract_canonical(row):
-        email = None
-        phone = None
-        name = None
+    def clean_email(v):
+        if pd.isna(v): return None
+        return str(v).strip().lower()
 
-        for col, val in row.items():
-            if pd.isna(val):
-                continue
+    def clean_phone(v):
+        if pd.isna(v): return None
+        return "".join(c for c in str(v) if c.isdigit())
 
-            col_l = col.lower()
+    def clean_name(v):
+        if pd.isna(v): return None
+        return str(v).strip().lower()
 
-            # EMAIL DETECTION
-            if email is None and any(k in col_l for k in EMAIL_KEYWORDS):
-                email = str(val).strip().lower()
+    df["email"] = (
+        df[email_cols]
+        .apply(lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1)
+        if email_cols else None
+    )
 
-            # PHONE DETECTION
-            if phone is None and any(k in col_l for k in PHONE_KEYWORDS):
-                phone = str(val).strip()
+    df["phone"] = (
+        df[phone_cols]
+        .apply(lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1)
+        if phone_cols else None
+    )
 
-            # NAME DETECTION
-            if name is None and "name" in col_l:
-                name = str(val).strip()
+    df["name"] = (
+        df[name_cols]
+        .apply(lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1)
+        if name_cols else None
+    )
 
-        row["email"] = email
-        row["phone"] = phone
-        row["name"] = name
+    return df
 
-        return row
-
-    return df.apply(extract_canonical, axis=1)
 
 
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
@@ -614,6 +639,12 @@ def serve_upload():
 def serve_preview():
     return FileResponse(os.path.join("..", "frontend", "preview.html"))
 
+# Add these routes in your main.py with the other static file routes
+
+@app.get("/related.html")
+def serve_related():
+    return FileResponse(os.path.join("..", "frontend", "related.html"))
+
 @app.get("/me")
 def me(current_user: dict = Depends(get_current_user)):
     return {
@@ -666,6 +697,11 @@ def me(current_user: dict = Depends(get_current_user)):
 @app.get("/users.html")
 def serve_users():
     return FileResponse(os.path.join("..", "frontend", "users.html"))
+
+# Add this route in your main.py with the other static file routes
+@app.get("/related.html")
+def serve_related():
+    return FileResponse(os.path.join("..", "frontend", "related.html"))
 
 @app.delete("/categories/{category_id}")
 def delete_category(
@@ -758,83 +794,355 @@ def related_records(
             for r in rows
         ]
     }
-
-# ---------------- RELATED RECORDS SUMMARY ----------------
-
 @app.get("/related-summary")
 def related_summary(
     upload_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user)
 ):
+    offset = (page - 1) * page_size
+
     with engine.begin() as conn:
-        rows = conn.execute(
-            text("""
-                WITH base AS (
-                    SELECT id,
-                           row_data,
-                           lower(trim(row_data->>'email')) AS email,
-                           regexp_replace(row_data->>'phone', '\\D', '', 'g') AS phone,
-                           lower(trim(row_data->>'name')) AS name
+        # 1. Detect usable fields
+        fields = detect_relation_fields(conn, upload_id)
+
+        if not fields:
+            return {
+                "relation_fields": [],
+                "total_records": 0,
+                "page": page,
+                "page_size": page_size,
+                "records": [],
+                "note": "No relational identifiers found in this dataset"
+            }
+
+        conditions = []
+
+        if "email" in fields:
+            conditions.append("""
+                row_data->>'email' IN (
+                    SELECT row_data->>'email'
                     FROM cleaned_data
                     WHERE upload_id = :uid
-                ),
-                related_keys AS (
-                    SELECT email, phone, name
-                    FROM base
-                    GROUP BY email, phone, name
-                    HAVING
-                        COUNT(*) > 1
-                        OR email IN (
-                            SELECT email FROM base
-                            GROUP BY email HAVING COUNT(*) > 1
-                        )
-                        OR phone IN (
-                            SELECT phone FROM base
-                            GROUP BY phone HAVING COUNT(*) > 1
-                        )
+                      AND row_data->>'email' IS NOT NULL
+                      AND row_data->>'email' != ''
+                    GROUP BY row_data->>'email'
+                    HAVING COUNT(*) > 1
                 )
-                SELECT b.id, b.row_data
-                FROM base b
-                JOIN related_keys r
-                  ON (
-                        b.email IS NOT NULL AND b.email = r.email
-                     OR b.phone IS NOT NULL AND b.phone = r.phone
-                     OR b.name IS NOT NULL AND b.name = r.name
-                  )
-                ORDER BY b.id
+            """)
+
+        if "phone" in fields:
+            conditions.append("""
+                row_data->>'phone' IN (
+                    SELECT row_data->>'phone'
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                      AND row_data->>'phone' IS NOT NULL
+                      AND row_data->>'phone' != ''
+                    GROUP BY row_data->>'phone'
+                    HAVING COUNT(*) > 1
+                )
+            """)
+
+        where_clause = " OR ".join(conditions)
+
+        total = conn.execute(
+            text(f"""
+                SELECT COUNT(*)
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                  AND ({where_clause})
             """),
             {"uid": upload_id}
+        ).scalar()
+
+        rows = conn.execute(
+            text(f"""
+                SELECT id, row_data
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                  AND ({where_clause})
+                ORDER BY id
+                LIMIT :limit OFFSET :offset
+            """),
+            {
+                "uid": upload_id,
+                "limit": page_size,
+                "offset": offset
+            }
         ).fetchall()
 
     return {
-        "total": len(rows),
-        "records": [{"id": r.id, "data": r.row_data} for r in rows]
+        "relation_fields": fields,
+        "total_records": total,
+        "page": page,
+        "page_size": page_size,
+        "records": [
+            {"id": r.id, "data": r.row_data}
+            for r in rows
+        ]
     }
-
-# ---------------- RELATED RECORD SEARCH ----------------
 
 @app.get("/related-search")
 def related_search(
     upload_id: int,
     value: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user)
 ):
+    """
+    OPTIMIZED: Search for specific email or phone.
+    Uses indexes for instant results even on 10 lakh records.
+    """
+    
+    offset = (page - 1) * page_size
+    value = value.strip()
+    normalized_phone = ''.join(c for c in value if c.isdigit())
+    
     with engine.begin() as conn:
-        rows = conn.execute(
+        # Count total (fast with indexes)
+        total = conn.execute(
             text("""
-                SELECT id, row_data
+                SELECT COUNT(*)
                 FROM cleaned_data
                 WHERE upload_id = :uid
-                  AND (
-                        LOWER(row_data->>'email') = LOWER(:val)
-                     OR row_data->>'phone' = :val
-                  )
-                ORDER BY id
+                AND (
+                    LOWER(TRIM(row_data->>'email')) = LOWER(:val)
+                    OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone
+                )
             """),
-            {"uid": upload_id, "val": value}
+            {"uid": upload_id, "val": value, "norm_phone": normalized_phone}
+        ).scalar()
+        
+        # Get paginated results (fast with indexes)
+        rows = conn.execute(
+            text("""
+                SELECT 
+                    id,
+                    row_data,
+                    LOWER(TRIM(row_data->>'email')) AS email,
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                AND (
+                    LOWER(TRIM(row_data->>'email')) = LOWER(:val)
+                    OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone
+                )
+                ORDER BY id
+                LIMIT :limit OFFSET :offset
+            """),
+            {
+                "uid": upload_id,
+                "val": value,
+                "norm_phone": normalized_phone,
+                "limit": page_size,
+                "offset": offset
+            }
         ).fetchall()
 
     return {
-        "total": len(rows),
-        "records": [{"id": r.id, "data": r.row_data} for r in rows]
+        "search_value": value,
+        "total_records": total,
+        "page": page,
+        "page_size": page_size,
+        "records": [
+            {
+                "id": r.id,
+                "data": r.row_data,
+                "matched_email": r.email,
+                "matched_phone": r.phone
+            }
+            for r in rows
+        ]
     }
+
+
+@app.get("/related-stats")
+def related_stats(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    OPTIMIZED: Get statistics using parallel queries and indexes.
+    """
+    
+    with engine.begin() as conn:
+        # Use parallel queries for speed
+        stats = conn.execute(
+            text("""
+                WITH email_dups AS (
+                    SELECT 
+                        LOWER(TRIM(row_data->>'email')) AS email,
+                        COUNT(*) AS cnt
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                    AND LOWER(TRIM(row_data->>'email')) IS NOT NULL
+                    AND LOWER(TRIM(row_data->>'email')) != ''
+                    GROUP BY LOWER(TRIM(row_data->>'email'))
+                    HAVING COUNT(*) > 1
+                ),
+                phone_dups AS (
+                    SELECT 
+                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone,
+                        COUNT(*) AS cnt
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                    AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != ''
+                    GROUP BY REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g')
+                    HAVING COUNT(*) > 1
+                )
+                SELECT 
+                    (SELECT COUNT(*) FROM email_dups) AS duplicate_emails,
+                    (SELECT COALESCE(SUM(cnt), 0) FROM email_dups) AS total_email_records,
+                    (SELECT COUNT(*) FROM phone_dups) AS duplicate_phones,
+                    (SELECT COALESCE(SUM(cnt), 0) FROM phone_dups) AS total_phone_records
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+    
+    return {
+        "duplicate_emails": stats.duplicate_emails or 0,
+        "total_email_records": stats.total_email_records or 0,
+        "duplicate_phones": stats.duplicate_phones or 0,
+        "total_phone_records": stats.total_phone_records or 0
+    }
+
+    # Add this NEW endpoint to main.py for grouped view
+
+@app.get("/related-grouped")
+def related_grouped(
+    upload_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Returns related records GROUPED by email/phone.
+    Shows all records with the same email or phone together.
+    """
+    
+    offset = (page - 1) * page_size
+    
+    with engine.begin() as conn:
+        # Get groups of related records
+        groups = conn.execute(
+            text("""
+                WITH normalized AS (
+                    SELECT 
+                        id,
+                        row_data,
+                        LOWER(TRIM(row_data->>'email')) AS email,
+                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                ),
+                duplicate_emails AS (
+                    SELECT email AS match_key, 'email' AS match_type, COUNT(*) AS record_count
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                    GROUP BY email
+                    HAVING COUNT(*) > 1
+                ),
+                duplicate_phones AS (
+                    SELECT phone AS match_key, 'phone' AS match_type, COUNT(*) AS record_count
+                    FROM normalized
+                    WHERE phone IS NOT NULL AND phone != ''
+                    GROUP BY phone
+                    HAVING COUNT(*) > 1
+                ),
+                all_duplicates AS (
+                    SELECT * FROM duplicate_emails
+                    UNION ALL
+                    SELECT * FROM duplicate_phones
+                )
+                SELECT 
+                    match_key,
+                    match_type,
+                    record_count
+                FROM all_duplicates
+                ORDER BY record_count DESC, match_key
+                LIMIT :limit OFFSET :offset
+            """),
+            {"uid": upload_id, "limit": page_size, "offset": offset}
+        ).fetchall()
+        
+        # Get total count of duplicate groups
+        total_groups = conn.execute(
+            text("""
+                WITH normalized AS (
+                    SELECT 
+                        LOWER(TRIM(row_data->>'email')) AS email,
+                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                ),
+                duplicate_emails AS (
+                    SELECT email AS match_key
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                    GROUP BY email
+                    HAVING COUNT(*) > 1
+                ),
+                duplicate_phones AS (
+                    SELECT phone AS match_key
+                    FROM normalized
+                    WHERE phone IS NOT NULL AND phone != ''
+                    GROUP BY phone
+                    HAVING COUNT(*) > 1
+                )
+                SELECT 
+                    (SELECT COUNT(*) FROM duplicate_emails) + 
+                    (SELECT COUNT(*) FROM duplicate_phones) AS total
+            """),
+            {"uid": upload_id}
+        ).scalar()
+        
+        # For each group, get all records
+        result_groups = []
+        for group in groups:
+            match_key = group.match_key
+            match_type = group.match_type
+            
+            if match_type == 'email':
+                records = conn.execute(
+                    text("""
+                        SELECT id, row_data
+                        FROM cleaned_data
+                        WHERE upload_id = :uid
+                        AND LOWER(TRIM(row_data->>'email')) = :key
+                        ORDER BY id
+                    """),
+                    {"uid": upload_id, "key": match_key}
+                ).fetchall()
+            else:  # phone
+                records = conn.execute(
+                    text("""
+                        SELECT id, row_data
+                        FROM cleaned_data
+                        WHERE upload_id = :uid
+                        AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :key
+                        ORDER BY id
+                    """),
+                    {"uid": upload_id, "key": match_key}
+                ).fetchall()
+            
+            result_groups.append({
+                "match_key": match_key,
+                "match_type": match_type,
+                "record_count": group.record_count,
+                "records": [
+                    {"id": r.id, "data": r.row_data}
+                    for r in records
+                ]
+            })
+    
+    return {
+        "total_groups": total_groups,
+        "page": page,
+        "page_size": page_size,
+        "groups": result_groups
+    }
+
+

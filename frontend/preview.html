@@ -48,7 +48,25 @@
             <span id="exportSpinner" class="spinner" style="display:none;"></span>
         </button>
 
-        <button onclick="openRelatedPage()">Related Records</button>
+<!-- In the header actions div, add: -->
+<button 
+    class="btn-related" 
+    onclick="openRelatedRecords()"
+    style="
+        background: #10b981;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        margin-left: 10px;
+    "
+>
+    🔗 View Related Records
+</button>
+
+<!-- Then add this JavaScript function in preview.js -->
 
     </div>
 </div>

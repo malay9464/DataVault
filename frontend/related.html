@@ -1,36 +1,237 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Related Records</title>
+    <title>Related Records - Data Vault</title>
     <link rel="stylesheet" href="/static/css/preview.css">
+    <style>
+        .view-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .view-toggle button {
+            padding: 10px 20px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .view-toggle button.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+        
+        .group-container {
+            margin-bottom: 30px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .group-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .group-header.email {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+        }
+        
+        .group-header.phone {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .group-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .group-badge {
+            background: rgba(255, 255, 255, 0.3);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+        }
+        
+        .group-records {
+            background: white;
+        }
+        
+        .group-records table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .group-records th {
+            background: #f9fafb;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .group-records td {
+            padding: 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .group-records tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .stats-bar {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2563eb;
+        }
+        
+        .search-panel {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .search-panel input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .search-panel button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .btn-back {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 60px;
+            color: #999;
+        }
+    </style>
 </head>
 <body>
 
 <div class="container">
-  <div class="card">
-
-    <!-- Header bar (same as preview) -->
-    <div class="header">
-        <h2>Related Records (This File)</h2>
-        <div class="actions">
-            <input type="text"
-                   id="searchValue"
-                   placeholder="Enter Email or Phone"
-                   style="padding:8px; width:250px;">
-            <button onclick="searchRelated()">Search</button>
-            <button onclick="loadRelatedSummary()">Reset</button>
+    <div class="card">
+        
+        <!-- Header -->
+        <div class="header">
+            <h2>🔗 Related Records</h2>
+            <button class="btn-back" onclick="goBack()">← Back to Preview</button>
         </div>
+
+        <!-- Statistics Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">Duplicate Emails</span>
+                <span class="stat-value" id="statDuplicateEmails">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Email Records</span>
+                <span class="stat-value" id="statEmailRecords">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Duplicate Phones</span>
+                <span class="stat-value" id="statDuplicatePhones">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Phone Records</span>
+                <span class="stat-value" id="statPhoneRecords">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Total Groups</span>
+                <span class="stat-value" id="statTotalGroups">-</span>
+            </div>
+        </div>
+
+        <!-- View Toggle -->
+        <div class="view-toggle">
+            <button id="btnGroupedView" class="active" onclick="switchView('grouped')">
+                📦 Grouped View
+            </button>
+            <button id="btnFlatView" onclick="switchView('flat')">
+                📋 Flat View
+            </button>
+        </div>
+
+        <!-- Search Panel -->
+        <div class="search-panel">
+            <input 
+                type="text" 
+                id="searchValue" 
+                placeholder="Search by email or phone number..."
+                onkeypress="if(event.key==='Enter') searchRelated()"
+            >
+            <button class="btn-primary" onclick="searchRelated()">🔍 Search</button>
+            <button class="btn-secondary" onclick="resetSearch()">Reset</button>
+        </div>
+
+        <!-- Results Container -->
+        <div id="resultsContainer">
+            <div style="text-align: center; padding: 40px; color: #999;">
+                Loading...
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div id="relatedPagination" class="pagination"></div>
+
     </div>
-
-    <!-- Table wrapper EXACTLY like preview -->
-    <div class="table-wrapper">
-        <table id="relatedTable" class="data-table"></table>
-    </div>
-
-    <!-- Pagination bar EXACTLY like preview -->
-    <div id="relatedPagination" class="pagination"></div>
-
-  </div>
 </div>
 
 <script src="/static/js/related.js"></script>

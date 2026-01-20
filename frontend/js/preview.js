@@ -229,3 +229,32 @@ function closeRelatedModal() {
 function openRelatedPage() {
     window.location.href = `/static/related.html?upload_id=${uploadId}`;
 }
+
+
+// Add this function to your preview.js file
+
+function openRelatedRecords() {
+    const params = new URLSearchParams(window.location.search);
+    const uploadId = params.get("upload_id");
+    
+    if (!uploadId) {
+        alert("No upload ID found");
+        return;
+    }
+    
+    console.log("Opening related records for upload:", uploadId);
+    window.location.href = `/related.html?upload_id=${uploadId}`;
+}
+
+function openRelatedRecords() {
+    const params = new URLSearchParams(window.location.search);
+    const uploadId = params.get("upload_id");
+    
+    if (!uploadId) {
+        alert("No upload ID found");
+        return;
+    }
+    
+    console.log("Opening related records for upload:", uploadId);
+    window.location.href = `/related.html?upload_id=${uploadId}`;
+}
