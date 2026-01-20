@@ -167,7 +167,26 @@ async def upload_file(
     user: dict = Depends(get_current_user)
 ):
     contents = await file.read()
-    name = file.filename.lower()
+    original_filename = file.filename
+    name = original_filename.lower()  # ONLY for extension checks
+
+    # ---------- FILENAME DUPLICATE CHECK (CASE-SENSITIVE) ----------
+    with engine.begin() as conn:
+        exists = conn.execute(
+            text("""
+                SELECT 1
+                FROM upload_log
+                WHERE filename = :fname
+                LIMIT 1
+            """),
+            {"fname": original_filename}
+        ).scalar()
+
+    if exists:
+        raise HTTPException(
+            status_code=409,
+            detail="File with the same name already exists"
+        )
 
     upload_id = int(time.time())
 

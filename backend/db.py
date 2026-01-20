@@ -21,7 +21,6 @@ def copy_cleaned_data(engine, upload_id: int, df: pd.DataFrame):
 
     buffer = io.StringIO()
 
-    # 🔥 CRITICAL: Replace NaN/NaT with None (PostgreSQL JSON requires null)
     df = df.replace({np.nan: None})
 
     df["upload_id"] = upload_id
