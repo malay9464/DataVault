@@ -203,3 +203,56 @@ tr:hover td {
   border-radius: 8px;
 }
 
+.group-records {
+    overflow-x: auto;
+    width: 100%;
+}
+
+.group-records table {
+    width: 100%;
+    min-width: 1200px; /* allows scroll instead of squeezing */
+    border-collapse: collapse;
+}
+
+/* ---------- RELATED RECORDS TABLE LAYOUT ---------- */
+
+.group-records {
+    overflow-x: auto;          /* allow horizontal scroll */
+    width: 100%;
+}
+
+.group-records table {
+    width: 100%;
+    min-width: 1200px;         /* prevents squishing */
+    border-collapse: collapse;
+}
+
+.group-records th,
+.group-records td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
+
+    /* 👇 THIS fixes Excel-like stretching */
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    font-size: 14px;
+}
+
+/* Sticky header so column names are always visible */
+.group-records th {
+    background: #f9fafb;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* ---------- FIX TABLE HEADER VISIBILITY ---------- */
+
+.group-records th {
+    color: #111827 !important;   /* force dark text */
+    background: #f3f4f6;         /* light gray header background */
+}

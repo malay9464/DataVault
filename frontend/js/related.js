@@ -47,25 +47,6 @@ async function loadStats() {
     }
 }
 
-// ---------------- SWITCH VIEW ----------------
-function switchView(view) {
-    currentView = view;
-    currentPage = 1;
-    
-    document.getElementById("btnGroupedView").classList.toggle("active", view === 'grouped');
-    document.getElementById("btnFlatView").classList.toggle("active", view === 'flat');
-    
-    if (isSearchMode) {
-        searchRelated();
-    } else {
-        if (view === 'grouped') {
-            loadGroupedView();
-        } else {
-            loadFlatView();
-        }
-    }
-}
-
 // ---------------- LOAD GROUPED VIEW ----------------
 async function loadGroupedView() {
     showLoading();
@@ -126,7 +107,24 @@ function renderGroupedView(data) {
 function renderGroupTable(records) {
     if (records.length === 0) return '<p>No records</p>';
     
-    const columns = Object.keys(records[0].data).slice(0, 10);
+    const preferredOrder = [
+                    "name",
+                    "email",
+                    "phone",
+                    "city",
+                    "address1",
+                    "address2",
+                    "position",
+                    "zip"
+                ];
+
+        const allColumns = Object.keys(records[0].data);
+
+        const columns = [
+            ...preferredOrder.filter(c => allColumns.includes(c)),
+            ...allColumns.filter(c => !preferredOrder.includes(c))
+        ];
+        ;
     
     let html = '<table>';
     
@@ -152,64 +150,6 @@ function renderGroupTable(records) {
     
     html += '</table>';
     return html;
-}
-
-// ---------------- LOAD FLAT VIEW ----------------
-async function loadFlatView() {
-    showLoading();
-    
-    try {
-        const res = await authFetch(
-            `/related-summary?upload_id=${uploadId}&page=${currentPage}&page_size=50`
-        );
-        
-        if (!res.ok) throw new Error("Failed to load flat data");
-        
-        const data = await res.json();
-        renderFlatView(data.records);
-        renderPagination(data.total_records, data.page, data.page_size);
-        
-    } catch (err) {
-        console.error(err);
-        alert("Failed to load records");
-    }
-}
-
-// ---------------- RENDER FLAT VIEW ----------------
-function renderFlatView(records) {
-    const container = document.getElementById("resultsContainer");
-    
-    if (records.length === 0) {
-        container.innerHTML = '<div class="no-results">No related records found</div>';
-        return;
-    }
-    
-    const columns = Object.keys(records[0].data).slice(0, 12);
-    
-    let html = '<table class="data-table">';
-    
-    // Header
-    html += '<tr>';
-    columns.forEach(col => {
-        html += `<th>${col}</th>`;
-    });
-    html += '</tr>';
-    
-    // Rows
-    records.forEach(record => {
-        html += '<tr>';
-        columns.forEach(col => {
-            let value = record.data[col];
-            if (value === null || value === undefined || value === "") {
-                value = "-";
-            }
-            html += `<td>${value}</td>`;
-        });
-        html += '</tr>';
-    });
-    
-    html += '</table>';
-    container.innerHTML = html;
 }
 
 // ---------------- SEARCH ----------------
