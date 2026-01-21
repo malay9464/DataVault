@@ -30,6 +30,13 @@ let currentFilter = 'all'; // 'all', 'email', 'phone', 'both'
 let allLoadedGroups = []; // Store all groups for filtering
 let hasLoadedAllGroups = false; // Track if we've already loaded all groups
 
+// Helper: detect phone-like column names (mobile, tel, contact, etc.)
+function isPhoneLike(col) {
+    if (!col) return false;
+    const s = col.replace(/[_\s\-]/g, ' ').toLowerCase();
+    return /\b(phone|mobile|mob|telephone|tel|contact|contactno|mobile_no|phone_no|mobilephone)\b/.test(s);
+}
+
 // ---------------- LOAD STATISTICS ----------------
 async function loadStats() {
     try {
@@ -173,10 +180,18 @@ function renderGroupTable(records) {
 
     const allColumns = records[0].data ? Object.keys(records[0].data) : [];
 
-    const columns = [
+    let columns = [
         ...preferredOrder.filter(c => allColumns.includes(c)),
         ...allColumns.filter(c => !preferredOrder.includes(c))
     ];
+
+    // If normalized `email` or `phone` columns exist, hide other original-like columns
+    if (allColumns.map(c => c.toLowerCase()).includes('email')) {
+        columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
+    }
+    if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
+        columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
+    }
     
     let html = '<table>';
     
@@ -255,10 +270,18 @@ async function searchRelated() {
         ];
 
         const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
-        const columns = [
+        let columns = [
             ...preferredOrder.filter(c => allColumns.includes(c)),
             ...allColumns.filter(c => !preferredOrder.includes(c))
         ];
+
+        // Hide original-like email/phone columns when normalized versions exist
+        if (allColumns.map(c => c.toLowerCase()).includes('email')) {
+            columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
+        }
+        if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
+            columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
+        }
         
         html += '<thead><tr>';
         columns.forEach(col => {
