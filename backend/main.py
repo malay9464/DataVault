@@ -920,24 +920,32 @@ def related_search(
     value = value.strip()
     normalized_phone = ''.join(c for c in value if c.isdigit())
     
+    # Build the WHERE clause dynamically to avoid matching empty strings
+    where_conditions = ["LOWER(TRIM(row_data->>'email')) = LOWER(:val)"]
+    query_params = {"uid": upload_id, "val": value}
+    
+    # Only add phone condition if we have digits in the search value
+    if normalized_phone:
+        where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone")
+        query_params["norm_phone"] = normalized_phone
+    
+    where_sql = " OR ".join(where_conditions)
+    
     with engine.begin() as conn:
         # Count total (fast with indexes)
         total = conn.execute(
-            text("""
+            text(f"""
                 SELECT COUNT(*)
                 FROM cleaned_data
                 WHERE upload_id = :uid
-                AND (
-                    LOWER(TRIM(row_data->>'email')) = LOWER(:val)
-                    OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone
-                )
+                AND ({where_sql})
             """),
-            {"uid": upload_id, "val": value, "norm_phone": normalized_phone}
+            query_params
         ).scalar()
         
         # Get paginated results (fast with indexes)
         rows = conn.execute(
-            text("""
+            text(f"""
                 SELECT 
                     id,
                     row_data,
@@ -945,17 +953,12 @@ def related_search(
                     REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
                 FROM cleaned_data
                 WHERE upload_id = :uid
-                AND (
-                    LOWER(TRIM(row_data->>'email')) = LOWER(:val)
-                    OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone
-                )
+                AND ({where_sql})
                 ORDER BY id
                 LIMIT :limit OFFSET :offset
             """),
             {
-                "uid": upload_id,
-                "val": value,
-                "norm_phone": normalized_phone,
+                **query_params,
                 "limit": page_size,
                 "offset": offset
             }
@@ -1028,7 +1031,7 @@ def related_stats(
         "total_phone_records": stats.total_phone_records or 0
     }
 
-    # Add this NEW endpoint to main.py for grouped view
+# Replace the entire /related-grouped endpoint
 
 @app.get("/related-grouped")
 def related_grouped(
@@ -1039,13 +1042,11 @@ def related_grouped(
 ):
     """
     Returns related records GROUPED by email/phone.
-    Shows all records with the same email or phone together.
+    Shows ONLY the COMMON identifier(s) shared by ALL records in the group.
     """
     
-    offset = (page - 1) * page_size
-    
     with engine.begin() as conn:
-        # Get groups of related records
+        # Get all duplicate groups (email + phone)
         groups = conn.execute(
             text("""
                 WITH normalized AS (
@@ -1082,86 +1083,228 @@ def related_grouped(
                     record_count
                 FROM all_duplicates
                 ORDER BY record_count DESC, match_key
-                LIMIT :limit OFFSET :offset
-            """),
-            {"uid": upload_id, "limit": page_size, "offset": offset}
-        ).fetchall()
-        
-        # Get total count of duplicate groups
-        total_groups = conn.execute(
-            text("""
-                WITH normalized AS (
-                    SELECT 
-                        LOWER(TRIM(row_data->>'email')) AS email,
-                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
-                    FROM cleaned_data
-                    WHERE upload_id = :uid
-                ),
-                duplicate_emails AS (
-                    SELECT email AS match_key
-                    FROM normalized
-                    WHERE email IS NOT NULL AND email != ''
-                    GROUP BY email
-                    HAVING COUNT(*) > 1
-                ),
-                duplicate_phones AS (
-                    SELECT phone AS match_key
-                    FROM normalized
-                    WHERE phone IS NOT NULL AND phone != ''
-                    GROUP BY phone
-                    HAVING COUNT(*) > 1
-                )
-                SELECT 
-                    (SELECT COUNT(*) FROM duplicate_emails) + 
-                    (SELECT COUNT(*) FROM duplicate_phones) AS total
             """),
             {"uid": upload_id}
-        ).scalar()
+        ).fetchall()
         
-        # For each group, get all records
-        result_groups = []
+        # Build a mapping of email -> phone and phone -> email to merge groups
+        email_to_phones = {}
+        phone_to_emails = {}
+        
         for group in groups:
-            match_key = group.match_key
-            match_type = group.match_type
-            
-            if match_type == 'email':
-                records = conn.execute(
+            if group.match_type == 'email':
+                if group.match_key not in email_to_phones:
+                    email_to_phones[group.match_key] = set()
+            else:
+                if group.match_key not in phone_to_emails:
+                    phone_to_emails[group.match_key] = set()
+        
+        # Find emails and phones that belong together
+        for group in groups:
+            if group.match_type == 'email':
+                email = group.match_key
+                phones_for_email = conn.execute(
                     text("""
-                        SELECT id, row_data
+                        SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
                         FROM cleaned_data
                         WHERE upload_id = :uid
-                        AND LOWER(TRIM(row_data->>'email')) = :key
-                        ORDER BY id
+                        AND LOWER(TRIM(row_data->>'email')) = :email
+                        AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != ''
                     """),
-                    {"uid": upload_id, "key": match_key}
+                    {"uid": upload_id, "email": email}
                 ).fetchall()
-            else:  # phone
-                records = conn.execute(
+                for p in phones_for_email:
+                    if p.phone:
+                        email_to_phones[email].add(p.phone)
+                        if p.phone not in phone_to_emails:
+                            phone_to_emails[p.phone] = set()
+                        phone_to_emails[p.phone].add(email)
+            else:
+                phone = group.match_key
+                emails_for_phone = conn.execute(
                     text("""
-                        SELECT id, row_data
+                        SELECT DISTINCT LOWER(TRIM(row_data->>'email')) AS email
                         FROM cleaned_data
                         WHERE upload_id = :uid
-                        AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :key
-                        ORDER BY id
+                        AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :phone
+                        AND LOWER(TRIM(row_data->>'email')) IS NOT NULL
+                        AND LOWER(TRIM(row_data->>'email')) != ''
                     """),
-                    {"uid": upload_id, "key": match_key}
+                    {"uid": upload_id, "phone": phone}
                 ).fetchall()
+                for e in emails_for_phone:
+                    if e.email:
+                        phone_to_emails[phone].add(e.email)
+                        if e.email not in email_to_phones:
+                            email_to_phones[e.email] = set()
+                        email_to_phones[e.email].add(phone)
+        
+        # Merge groups: use Union-Find approach
+        merged_groups = {}
+        visited_emails = set()
+        visited_phones = set()
+        
+        for email in email_to_phones:
+            if email in visited_emails:
+                continue
             
-            result_groups.append({
+            email_cluster = set()
+            phone_cluster = set()
+            queue = [('email', email)]
+            
+            while queue:
+                typ, val = queue.pop(0)
+                
+                if typ == 'email':
+                    if val in visited_emails:
+                        continue
+                    visited_emails.add(val)
+                    email_cluster.add(val)
+                    
+                    for phone in email_to_phones.get(val, []):
+                        if phone not in visited_phones:
+                            queue.append(('phone', phone))
+                
+                else:  # phone
+                    if val in visited_phones:
+                        continue
+                    visited_phones.add(val)
+                    phone_cluster.add(val)
+                    
+                    for email_val in phone_to_emails.get(val, []):
+                        if email_val not in visited_emails:
+                            queue.append(('email', email_val))
+            
+            group_key = f"merged_{len(merged_groups)}"
+            merged_groups[group_key] = (email_cluster, phone_cluster)
+        
+        for phone in phone_to_emails:
+            if phone in visited_phones:
+                continue
+            
+            email_cluster = set()
+            phone_cluster = set()
+            queue = [('phone', phone)]
+            
+            while queue:
+                typ, val = queue.pop(0)
+                
+                if typ == 'phone':
+                    if val in visited_phones:
+                        continue
+                    visited_phones.add(val)
+                    phone_cluster.add(val)
+                    
+                    for email_val in phone_to_emails.get(val, []):
+                        if email_val not in visited_emails:
+                            queue.append(('email', email_val))
+                
+                else:  # email
+                    if val in visited_emails:
+                        continue
+                    visited_emails.add(val)
+                    email_cluster.add(val)
+                    
+                    for phone_val in email_to_phones.get(val, []):
+                        if phone_val not in visited_phones:
+                            queue.append(('phone', phone_val))
+            
+            group_key = f"merged_{len(merged_groups)}"
+            merged_groups[group_key] = (email_cluster, phone_cluster)
+        
+        # Sort by cluster size (descending)
+        sorted_groups = sorted(
+            merged_groups.items(),
+            key=lambda x: len(x[1][0]) + len(x[1][1]),
+            reverse=True
+        )
+        
+        # FIRST: Build all result groups (before pagination)
+        all_result_groups = []
+        for group_key, (emails, phones) in sorted_groups:
+            # Get all records matching any email or phone in this cluster
+            records = conn.execute(
+                text("""
+                    SELECT id, row_data
+                    FROM cleaned_data
+                    WHERE upload_id = :uid
+                    AND (
+                        LOWER(TRIM(row_data->>'email')) = ANY(:emails)
+                        OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
+                    )
+                    ORDER BY id
+                """),
+                {
+                    "uid": upload_id,
+                    "emails": list(emails) if emails else [None],
+                    "phones": list(phones) if phones else [None]
+                }
+            ).fetchall()
+            
+            if not records:
+                continue
+            
+            # Extract the COMMON identifiers shared by ALL records in this group
+            common_emails = set()
+            common_phones = set()
+            
+            # Get all unique emails in this group
+            group_emails = set()
+            group_phones = set()
+            
+            for record in records:
+                email = record.row_data.get("email")
+                phone = record.row_data.get("phone")
+                
+                if email and email.strip():
+                    group_emails.add(email.strip().lower())
+                if phone and phone.strip():
+                    normalized_phone = ''.join(c for c in phone if c.isdigit())
+                    if normalized_phone:
+                        group_phones.add(normalized_phone)
+            
+            # Find COMMON identifiers (present in ALL records)
+            if len(records) > 0:
+                # Check if all records share the same email
+                if len(group_emails) == 1:
+                    common_emails = group_emails
+                
+                # Check if all records share the same phone
+                if len(group_phones) == 1:
+                    common_phones = group_phones
+            
+            # SKIP THIS GROUP if NO common identifier exists
+            if not common_emails and not common_phones:
+                continue
+            
+            # Format match key with ONLY common identifiers
+            match_display = []
+            if common_emails:
+                match_display.extend([f"📧 {e}" for e in sorted(common_emails)])
+            if common_phones:
+                match_display.extend([f"📱 {p}" for p in sorted(common_phones)])
+            
+            match_type = 'merged' if (common_emails and common_phones) else ('email' if common_emails else 'phone')
+            match_key = " | ".join(match_display)
+            
+            all_result_groups.append({
                 "match_key": match_key,
                 "match_type": match_type,
-                "record_count": group.record_count,
+                "record_count": len(records),
                 "records": [
                     {"id": r.id, "data": r.row_data}
                     for r in records
                 ]
             })
+        
+        # SECOND: Apply pagination on filtered results
+        total_groups = len(all_result_groups)
+        offset = (page - 1) * page_size
+        paginated_groups = all_result_groups[offset:offset + page_size]
     
     return {
         "total_groups": total_groups,
         "page": page,
         "page_size": page_size,
-        "groups": result_groups
+        "groups": paginated_groups
     }
-
-

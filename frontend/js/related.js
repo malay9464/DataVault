@@ -23,7 +23,7 @@ if (!uploadId) {
 }
 
 let currentPage = 1;
-let pageSize = 20;
+let pageSize = 10;
 let currentView = 'grouped';
 let isSearchMode = false;
 
@@ -200,7 +200,7 @@ async function searchRelated() {
             </div>
         `;
         
-        html += '<table>';
+        html += '<div class="group-records" style="max-height: none;"><table>';
         
         const preferredOrder = [
             "name",
@@ -239,7 +239,7 @@ async function searchRelated() {
         });
         html += '</tbody>';
         
-        html += '</table>';
+        html += '</table></div>';
         
         container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
