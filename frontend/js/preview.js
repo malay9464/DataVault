@@ -241,7 +241,7 @@ function openRelatedRecords() {
         alert("No upload ID found");
         return;
     }
-    
+
     console.log("Opening related records for upload:", uploadId);
     window.location.href = `/related.html?upload_id=${uploadId}`;
 }

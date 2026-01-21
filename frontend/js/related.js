@@ -23,9 +23,12 @@ if (!uploadId) {
 }
 
 let currentPage = 1;
-let pageSize = 10;
+let pageSize = 100; // Fetch all groups - backend max is 100
 let currentView = 'grouped';
 let isSearchMode = false;
+let currentFilter = 'all'; // 'all', 'email', 'phone', 'both'
+let allLoadedGroups = []; // Store all groups for filtering
+let hasLoadedAllGroups = false; // Track if we've already loaded all groups
 
 // ---------------- LOAD STATISTICS ----------------
 async function loadStats() {
@@ -52,8 +55,32 @@ async function loadGroupedView() {
     showLoading();
     
     try {
+        // Fetch data from backend with current filter
         const res = await authFetch(
-            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=${pageSize}`
+            `/related-grouped?upload_id=${uploadId}&page=1&page_size=20&match_type=${currentFilter}`
+        );
+        
+        if (!res.ok) throw new Error("Failed to load grouped data");
+        
+        const data = await res.json();
+        
+        // Store the response for pagination purposes
+        renderGroupedView(data);
+        renderPagination(data.total_groups, data.page, data.page_size);
+        
+    } catch (err) {
+        console.error(err);
+        alert("Failed to load grouped records");
+    }
+}
+
+// Load specific page with current filter
+async function loadGroupedViewWithPage() {
+    showLoading();
+    
+    try {
+        const res = await authFetch(
+            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=20&match_type=${currentFilter}`
         );
         
         if (!res.ok) throw new Error("Failed to load grouped data");
@@ -68,6 +95,21 @@ async function loadGroupedView() {
     }
 }
 
+// ---------------- FILTER FUNCTION ----------------
+function filterByType(filterType) {
+    currentFilter = filterType;
+    currentPage = 1; // Reset to first page
+    
+    // Update button states
+    document.getElementById("btnFilterAll").classList.toggle("active", filterType === 'all');
+    document.getElementById("btnFilterEmail").classList.toggle("active", filterType === 'email');
+    document.getElementById("btnFilterPhone").classList.toggle("active", filterType === 'phone');
+    document.getElementById("btnFilterBoth").classList.toggle("active", filterType === 'both');
+    
+    // Reload data from backend with new filter
+    loadGroupedView();
+}
+
 // ---------------- RENDER GROUPED VIEW ----------------
 function renderGroupedView(data) {
     const container = document.getElementById('resultsContainer');
@@ -77,20 +119,19 @@ function renderGroupedView(data) {
         return;
     }
     
+    // No need for client-side pagination - backend already paginated
     let html = '';
     
     data.groups.forEach((group, index) => {
-        const groupId = `group-${index}`;
+        const groupId = `group-${data.page}-${index}`; // Unique ID per page
         const recordCount = group.records.length;
-        const isEmail = group.match_type === 'email';
-        const icon = isEmail ? '📧' : '📱';
         
         html += `
             <div class="group-container">
                 <div class="group-header ${group.match_type}" onclick="toggleGroup('${groupId}')">
                     <div class="group-title">
                         <span class="expand-icon" id="expand-${groupId}">▼</span>
-                        <span>${icon} ${group.match_key}</span>
+                        <span>${group.match_key}</span>
                         <span class="group-badge">${recordCount} records</span>
                     </div>
                 </div>
@@ -272,7 +313,7 @@ function renderPagination(total, page, size) {
     prevBtn.disabled = page === 1;
     prevBtn.onclick = () => {
         currentPage--;
-        loadGroupedView();
+        loadGroupedViewWithPage();
     };
     pagination.appendChild(prevBtn);
     
@@ -313,7 +354,7 @@ function renderPagination(total, page, size) {
     nextBtn.disabled = page === totalPages;
     nextBtn.onclick = () => {
         currentPage++;
-        loadGroupedView();
+        loadGroupedViewWithPage();
     };
     pagination.appendChild(nextBtn);
 }
@@ -324,7 +365,7 @@ function addPageButton(pageNum, currentPageNum) {
     btn.className = pageNum === currentPageNum ? "active" : "";
     btn.onclick = () => {
         currentPage = pageNum;
-        loadGroupedView();
+        loadGroupedViewWithPage();
     };
     document.getElementById("relatedPagination").appendChild(btn);
 }

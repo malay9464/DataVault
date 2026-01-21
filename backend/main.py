@@ -1038,12 +1038,17 @@ def related_grouped(
     upload_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    match_type: str = Query("all", regex="^(all|email|phone|merged|both)$"),
     user: dict = Depends(get_current_user)
 ):
     """
     Returns related records GROUPED by email/phone.
+    match_type: 'all', 'email', 'phone', or 'merged' (both email and phone)
     Shows ONLY the COMMON identifier(s) shared by ALL records in the group.
     """
+    # Accept 'both' as a synonym for internal 'merged' value
+    if match_type == 'both':
+        match_type = 'merged'
     
     with engine.begin() as conn:
         # Get all duplicate groups (email + phone)
@@ -1284,12 +1289,12 @@ def related_grouped(
             if common_phones:
                 match_display.extend([f"📱 {p}" for p in sorted(common_phones)])
             
-            match_type = 'merged' if (common_emails and common_phones) else ('email' if common_emails else 'phone')
+            grp_match_type = 'merged' if (common_emails and common_phones) else ('email' if common_emails else 'phone')
             match_key = " | ".join(match_display)
             
             all_result_groups.append({
                 "match_key": match_key,
-                "match_type": match_type,
+                "match_type": grp_match_type,
                 "record_count": len(records),
                 "records": [
                     {"id": r.id, "data": r.row_data}
@@ -1297,10 +1302,15 @@ def related_grouped(
                 ]
             })
         
-        # SECOND: Apply pagination on filtered results
-        total_groups = len(all_result_groups)
+        # SECOND: Apply filtering based on match_type
+        filtered_groups = all_result_groups
+        if match_type != 'all':
+            filtered_groups = [g for g in all_result_groups if g['match_type'] == match_type]
+        
+        # THIRD: Apply pagination on filtered results
+        total_groups = len(filtered_groups)
         offset = (page - 1) * page_size
-        paginated_groups = all_result_groups[offset:offset + page_size]
+        paginated_groups = filtered_groups[offset:offset + page_size]
     
     return {
         "total_groups": total_groups,

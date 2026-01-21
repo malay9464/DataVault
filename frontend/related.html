@@ -193,6 +193,36 @@
         .group-header.merged {
             background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
         }
+
+        .filter-panel {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .filter-panel button {
+            padding: 12px 24px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 14px;
+            min-width: 120px;
+            white-space: nowrap;
+            color: #374151;
+        }
+        
+        .filter-panel button:hover {
+            border-color: #2563eb;
+        }
+        
+        .filter-panel button.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
     </style>
 </head>
 <body>
@@ -234,6 +264,22 @@
         <div class="view-toggle">
             <button id="btnGroupedView" class="active" onclick="switchView('grouped')">
                 📦 Grouped View
+            </button>
+        </div>
+
+        <!-- Filter Panel -->
+        <div class="filter-panel">
+            <button id="btnFilterAll" class="active" onclick="filterByType('all')">
+                📊 All Records
+            </button>
+            <button id="btnFilterEmail" onclick="filterByType('email')">
+                📧 Email Only
+            </button>
+            <button id="btnFilterPhone" onclick="filterByType('phone')">
+                📱 Phone Only
+            </button>
+            <button id="btnFilterBoth" onclick="filterByType('both')">
+                🔗 Both
             </button>
         </div>
 
