@@ -15,6 +15,18 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 def authenticate_user(email: str, password: str):
+        # =========================================================
+    # DEMO LOGIN (TEMPORARY — REMOVE BEFORE PRODUCTION)
+    # Allows UI access without DB / shell (Render free tier)
+    # =========================================================
+    if email == "demo@datavault.com" and password == "demo123":
+        return {
+            "id": 0,
+            "email": "demo@datavault.com",
+            "role": "admin",
+            "is_active": True
+        }
+
     with engine.begin() as conn:
         user = conn.execute(
             text("""
