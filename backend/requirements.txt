@@ -10,3 +10,4 @@ reportlab
 openpyxl
 xlrd==1.2.0
 aiofiles
+PyJWT
