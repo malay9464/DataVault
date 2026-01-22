@@ -41,6 +41,26 @@ function authFetch(url, options = {}) {
     });
 }
 
+function showToast(message, type = "success", timeout = 4000) {
+    console.log("TOAST:", message, type); // DEBUG
+
+    let container = document.getElementById("toastContainer");
+
+    if (!container) {
+        alert("Toast container missing!");
+        return;
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    setTimeout(() => toast.remove(), timeout);
+}
+
+
 fileInput.onchange = () => {
     selectedFile = fileInput.files[0];
     fileName.innerText = selectedFile ? selectedFile.name : "";
@@ -73,7 +93,6 @@ function buildSearchParams() {
     return p.toString();
 }
 
-
 async function addCategoryPrompt() {
     const name = prompt("Enter category name");
     if (!name) return;
@@ -90,7 +109,6 @@ async function addCategoryPrompt() {
 
     loadCategories();
 }
-
 
 function applyAdvancedSearch() {
     page = 1;
@@ -169,7 +187,12 @@ function applyFilter(type, el) {
 
 /* ---------- UPLOAD ---------- */
 async function upload() {
-    if (!selectedFile) return alert("Select a file");
+    console.log("Upload clicked");
+
+    if (!selectedFile) {
+        showToast("Please select a file", "warn");
+        return;
+    }
 
     const btn = document.getElementById("uploadBtn");
     const spinner = document.getElementById("uploadSpinner");
@@ -181,10 +204,24 @@ async function upload() {
         const fd = new FormData();
         fd.append("file", selectedFile);
 
-        await authFetch(`/upload?category_id=${categorySelect.value}`, {
-            method: "POST",
-            body: fd
-        });
+        const res = await authFetch(
+            `/upload?category_id=${categorySelect.value}`,
+            { method: "POST", body: fd }
+        );
+
+        console.log("Upload response status:", res.status);
+
+        if (res.status === 409) {
+            showToast("File already uploaded", "error");
+            return;
+        }
+
+        if (!res.ok) {
+            showToast("Upload failed", "error");
+            return;
+        }
+
+        showToast("Upload successful", "success");
 
         selectedFile = null;
         fileInput.value = "";
@@ -192,13 +229,16 @@ async function upload() {
 
         loadCategories();
         loadUploads();
+
     } catch (err) {
-        alert("Upload failed. Please try again.");
+        console.error(err);
+        showToast("Network error", "error");
     } finally {
         btn.disabled = false;
         spinner.style.display = "none";
     }
 }
+
 
 function openAddUserModal() {
     document.getElementById("addUserModal").style.display = "flex";
