@@ -28,3 +28,8 @@ async function login() {
     localStorage.setItem("access_token", data.access_token);
     window.location.href = "/";
 }
+
+document.getElementById("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault(); // stop page reload
+    login();
+});

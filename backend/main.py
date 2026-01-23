@@ -140,8 +140,6 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
 @app.get("/categories")
 def list_categories():
@@ -298,10 +296,6 @@ async def upload_file(
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
     return {"success": True}
-
-
-
-
 
 # ---------------- UPLOAD LIST ----------------
 @app.get("/uploads")

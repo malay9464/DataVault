@@ -1,5 +1,3 @@
-
-
 CREATE TABLE upload_log (
     id SERIAL PRIMARY KEY,
     filename TEXT,

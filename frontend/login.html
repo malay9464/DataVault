@@ -9,23 +9,26 @@
 <body>
 
 <div class="login-card">
-    <div class="login-header">
-        <h2>Data Vault</h2>
-        <p>Secure File Management</p>
-    </div>
+    <form id="loginForm">
+        <div class="login-header">
+            <h2>Data Vault</h2>
+            <p>Secure File Management</p>
+        </div>
 
-    <div class="field">
-        <label>Email</label>
-        <input id="email" type="email" placeholder="you@example.com">
-    </div>
+        <div class="field">
+            <label>Email</label>
+            <input id="email" type="email" placeholder="you@example.com" required>
+        </div>
 
-    <div class="field">
-        <label>Password</label>
-        <input id="password" type="password" placeholder="••••••••">
-    </div>
+        <div class="field">
+            <label>Password</label>
+            <input id="password" type="password" placeholder="••••••••" required>
+        </div>
 
-    <button class="login-btn" onclick="login()">Login</button>
+        <button class="login-btn" type="submit">Login</button>
+    </form>
 </div>
+
 
 <!-- JS -->
 <script src="/static/js/login.js"></script>
