@@ -5,15 +5,24 @@ if (!token) {
     window.location.href = "/static/login.html";
 }
 
-function authFetch(url, options = {}) {
-    return fetch(url, {
+async function authFetch(url, options = {}) {
+    const res = await fetch(url, {
         ...options,
         headers: {
             ...(options.headers || {}),
             "Authorization": "Bearer " + token
         }
     });
+
+    if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/static/login.html";
+        return;
+    }
+
+    return res;
 }
+
 
 /* ---------- PARAMS ---------- */
 const params = new URLSearchParams(window.location.search);

@@ -4,15 +4,24 @@ if (!token) {
     window.location.href = "/static/login.html";
 }
 
-function authFetch(url, options = {}) {
-    return fetch(url, {
+async function authFetch(url, options = {}) {
+    const res = await fetch(url, {
         ...options,
         headers: {
             ...(options.headers || {}),
-            "Authorization": `Bearer ${token}`
+            "Authorization": "Bearer " + token
         }
     });
+
+    if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/static/login.html";
+        return;
+    }
+
+    return res;
 }
+
 
 const params = new URLSearchParams(window.location.search);
 const uploadId = params.get("upload_id");
@@ -40,22 +49,31 @@ function isPhoneLike(col) {
 // ---------------- LOAD STATISTICS ----------------
 async function loadStats() {
     try {
-        const res = await authFetch(`/related-stats?upload_id=${uploadId}`);
-        if (!res.ok) throw new Error("Failed to load stats");
-        
+        const res = await authFetch(
+            `/related-grouped-stats?upload_id=${uploadId}`
+        );
+
+        if (!res.ok) throw new Error("Failed to load grouped stats");
+
         const stats = await res.json();
-        
-        document.getElementById("statDuplicateEmails").innerText = stats.duplicate_emails;
-        document.getElementById("statEmailRecords").innerText = stats.total_email_records;
-        document.getElementById("statDuplicatePhones").innerText = stats.duplicate_phones;
-        document.getElementById("statPhoneRecords").innerText = stats.total_phone_records;
-        
-        const totalGroups = stats.duplicate_emails + stats.duplicate_phones;
-        document.getElementById("statTotalGroups").innerText = totalGroups;
+
+        document.getElementById("statDuplicateEmails").innerText = stats.email_groups;
+        document.getElementById("statEmailRecords").innerText = stats.email_records;
+
+        document.getElementById("statDuplicatePhones").innerText = stats.phone_groups;
+        document.getElementById("statPhoneRecords").innerText = stats.phone_records;
+
+        document.getElementById("statBoth").innerText = stats.both_groups;
+        document.getElementById("statBothRecords").innerText = stats.both_records;
+
+
+
     } catch (err) {
-        console.error("Failed to load stats:", err);
+        console.error("Stats load failed:", err);
     }
 }
+
+
 
 // ---------------- LOAD GROUPED VIEW ----------------
 async function loadGroupedView() {
@@ -137,12 +155,12 @@ function renderGroupedView(data) {
             <div class="group-container">
                 <div class="group-header ${group.match_type}" onclick="toggleGroup('${groupId}')">
                     <div class="group-title">
-                        <span class="expand-icon" id="expand-${groupId}">▼</span>
+                        <span class="expand-icon collapsed" id="expand-${groupId}">▼</span>
                         <span>${group.match_key}</span>
                         <span class="group-badge">${recordCount} records</span>
                     </div>
                 </div>
-                <div class="group-records" id="records-${groupId}">
+                <div class="group-records collapsed" id="records-${groupId}">
                     ${renderGroupTable(group.records)}
                 </div>
             </div>

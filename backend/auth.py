@@ -3,7 +3,6 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import text
 from datetime import datetime, timedelta
 import jwt
-
 from db import engine
 from security import verify_password
 

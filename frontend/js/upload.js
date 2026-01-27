@@ -31,15 +31,24 @@ const dateFrom = document.getElementById("dateFrom");
 const dateTo = document.getElementById("dateTo");
 
 
-function authFetch(url, options = {}) {
-    return fetch(url, {
+async function authFetch(url, options = {}) {
+    const res = await fetch(url, {
         ...options,
         headers: {
             ...(options.headers || {}),
-            "Authorization": `Bearer ${token}`
+            "Authorization": "Bearer " + token
         }
     });
+
+    if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/static/login.html";
+        return;
+    }
+
+    return res;
 }
+
 
 function showToast(message, type = "success", timeout = 4000) {
     console.log("TOAST:", message, type); // DEBUG
