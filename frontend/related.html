@@ -11,10 +11,11 @@
     <div class="card">
         
         <!-- Header -->
-        <div class="header">
-            <h2>🔗 Related Records</h2>
+        <div class="header-row">
+            <h2 class="page-title">🔗 Related Records</h2>
             <button class="btn-back" onclick="goBack()">← Back to Preview</button>
         </div>
+
 
         <!-- Statistics Bar -->
         <div class="stats-bar">
@@ -52,32 +53,32 @@
         </div>
 
         <!-- Filter Panel -->
-        <div class="filter-panel">
-            <button id="btnFilterAll" class="active" onclick="filterByType('all')">
-                📊 All Records
-            </button>
-            <button id="btnFilterEmail" onclick="filterByType('email')">
-                📧 Email Only
-            </button>
-            <button id="btnFilterPhone" onclick="filterByType('phone')">
-                📱 Phone Only
-            </button>
-            <button id="btnFilterBoth" onclick="filterByType('both')">
-                🔗 Both
-            </button>
+        <div class="control-row">
+            <div class="filter-panel">
+                <button id="btnFilterAll" class="active" onclick="filterByType('all')">📊 All</button>
+                <button id="btnFilterEmail" onclick="filterByType('email')">📧 Email</button>
+                <button id="btnFilterPhone" onclick="filterByType('phone')">📱 Phone</button>
+                <button id="btnFilterBoth" onclick="filterByType('both')">🔗 Both</button>
+            </div>
+
+            <div class="search-panel">
+                <input
+                    type="text"
+                    id="searchValue"
+                    placeholder="Search by email or phone..."
+                    onkeypress="if(event.key==='Enter') searchRelated()"
+                >
+                <button class="btn-primary" onclick="searchRelated()">🔍 Search</button>
+                <button class="btn-secondary" onclick="resetSearch()">Reset</button>
+            </div>
         </div>
 
-        <!-- Search Panel -->
-        <div class="search-panel">
-            <input 
-                type="text" 
-                id="searchValue" 
-                placeholder="Search by email or phone number..."
-                onkeypress="if(event.key==='Enter') searchRelated()"
-            >
-            <button class="btn-primary" onclick="searchRelated()">🔍 Search</button>
-            <button class="btn-secondary" onclick="resetSearch()">Reset</button>
-        </div>
+
+        <hr style="
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 15px 0;
+        ">
 
         <!-- Results Container -->
         <div id="resultsContainer">

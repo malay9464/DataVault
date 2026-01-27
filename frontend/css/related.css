@@ -1,7 +1,7 @@
         .view-toggle {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 5px;
         }
         
         .view-toggle button {
@@ -28,35 +28,46 @@
         }
         
         .group-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 20px;
+            background: #f9fafb;
+            color: #111827;
+            padding: 10px 14px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
             cursor: pointer;
             user-select: none;
-            transition: all 0.2s;
+            border-bottom: 1px solid #e5e7eb;
         }
         
         .group-header:hover {
             opacity: 0.9;
         }
         
-        .group-header.email {
-            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+        .group-container {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            margin-bottom: 10px;
         }
-        
-        .group-header.phone {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+
+        .group-container.email {
+            border-left: 4px solid #2563eb;
         }
+
+        .group-container.phone {
+            border-left: 4px solid #10b981;
+        }
+
+        .group-container.merged {
+            border-left: 4px solid #7c3aed;
+        }
+
         
         .group-title {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 16px;
-            font-weight: 600;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
         }
         
         .expand-icon {
@@ -143,7 +154,7 @@
             display: flex;
             gap: 10px;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 0px;
         }
         
         .search-panel input {
@@ -152,6 +163,9 @@
             border: 1px solid #ddd;
             border-radius: 6px;
             font-size: 14px;
+            width: 70%;
+            max-width: 70%;
+            height: 40px;
         }
         
         .search-panel button {
@@ -161,6 +175,7 @@
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
+            height: 40px;
         }
         
         .btn-primary {
@@ -184,14 +199,10 @@
             color: #999;
         }
 
-        .group-header.merged {
-            background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-        }
-
         .filter-panel {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 0px;
         }
         
         .filter-panel button {
@@ -210,10 +221,48 @@
         
         .filter-panel button:hover {
             border-color: #2563eb;
+            background: #f9fafb;
         }
         
         .filter-panel button.active {
-            background: #2563eb;
-            color: white;
-            border-color: #2563eb;
+            background: #eef2ff !important;
+            color: #1e3a8a !important;
+            border-color: #c7d2fe !important;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .page-title {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .filter-panel {
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-panel {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-panel input {
+            width: 360px;
+            height: 26px;
         }

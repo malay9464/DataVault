@@ -135,6 +135,20 @@ function filterByType(filterType) {
     loadGroupedView();
 }
 
+function getPrimaryIdentifier(group) {
+    if (!group.match_key) return "Unknown";
+
+    // match_key may contain multiple identifiers separated by |
+    const parts = group.match_key.split("|").map(p => p.trim());
+
+    if (group.match_type === "phone") {
+        return parts.find(p => /\d/.test(p)) || parts[0];
+    }
+
+    // email or merged → prefer email
+    return parts.find(p => p.includes("@")) || parts[0];
+}
+
 // ---------------- RENDER GROUPED VIEW ----------------
 function renderGroupedView(data) {
     const container = document.getElementById('resultsContainer');
@@ -156,7 +170,7 @@ function renderGroupedView(data) {
                 <div class="group-header ${group.match_type}" onclick="toggleGroup('${groupId}')">
                     <div class="group-title">
                         <span class="expand-icon collapsed" id="expand-${groupId}">▼</span>
-                        <span>${group.match_key}</span>
+                        <span>${getPrimaryIdentifier(group)}</span>
                         <span class="group-badge">${recordCount} records</span>
                     </div>
                 </div>
