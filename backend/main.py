@@ -460,7 +460,36 @@ def preview_data(
         "total_records": total
     }
 
-
+# ---------------- FILE METADATA ----------------
+@app.get("/upload-metadata")
+def get_upload_metadata(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Fetch metadata for a specific upload.
+    Returns filename and other relevant info.
+    """
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT upload_id, filename, total_records, uploaded_at
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Upload not found")
+        
+        return {
+            "upload_id": result.upload_id,
+            "filename": result.filename,
+            "total_records": result.total_records,
+            "uploaded_at": str(result.uploaded_at)
+        }
+    
 @app.get("/admin/users")
 def list_users(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":

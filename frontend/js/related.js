@@ -22,7 +22,6 @@ async function authFetch(url, options = {}) {
     return res;
 }
 
-
 const params = new URLSearchParams(window.location.search);
 const uploadId = params.get("upload_id");
 
@@ -32,18 +31,60 @@ if (!uploadId) {
 }
 
 let currentPage = 1;
-let pageSize = 100; // Fetch all groups - backend max is 100
+let pageSize = 100;
 let currentView = 'grouped';
 let isSearchMode = false;
-let currentFilter = 'all'; // 'all', 'email', 'phone', 'both'
-let allLoadedGroups = []; // Store all groups for filtering
-let hasLoadedAllGroups = false; // Track if we've already loaded all groups
+let currentFilter = 'all';
+let allLoadedGroups = [];
+let hasLoadedAllGroups = false;
 
-// Helper: detect phone-like column names (mobile, tel, contact, etc.)
+/* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
+function orderColumns(columns) {
+    const priority = ["name", "email", "phone"];
+    
+    const priorityColumns = priority.filter(col => columns.includes(col));
+    const remainingColumns = columns.filter(col => !priority.includes(col));
+    
+    return [...priorityColumns, ...remainingColumns];
+}
+
+/* ---------- ✅ LOAD FILE METADATA ---------- */
+async function loadFileMetadata() {
+    try {
+        const res = await authFetch(`/upload-metadata?upload_id=${uploadId}`);
+        
+        if (!res.ok) {
+            console.error("Failed to load file metadata");
+            return;
+        }
+        
+        const metadata = await res.json();
+        
+        document.getElementById("fileName").textContent = metadata.filename;
+        document.getElementById("fileContext").style.display = "block";
+        
+    } catch (err) {
+        console.error("Error loading file metadata:", err);
+    }
+}
+
 function isPhoneLike(col) {
     if (!col) return false;
     const s = col.replace(/[_\s\-]/g, ' ').toLowerCase();
     return /\b(phone|mobile|mob|telephone|tel|contact|contactno|mobile_no|phone_no|mobilephone)\b/.test(s);
+}
+
+/* ---------- ✅ LOADING STATE HELPERS ---------- */
+function showLoading() {
+    document.getElementById("resultsContainer").innerHTML = `
+        <div style="text-align: center; padding: 60px; color: #9ca3af; font-size: 16px;">
+            ⏳ Loading data...
+        </div>
+    `;
+}
+
+function hideLoading() {
+    // Loading indicator is replaced by actual content in render functions
 }
 
 // ---------------- LOAD STATISTICS ----------------
@@ -59,28 +100,21 @@ async function loadStats() {
 
         document.getElementById("statDuplicateEmails").innerText = stats.email_groups;
         document.getElementById("statEmailRecords").innerText = stats.email_records;
-
         document.getElementById("statDuplicatePhones").innerText = stats.phone_groups;
         document.getElementById("statPhoneRecords").innerText = stats.phone_records;
-
         document.getElementById("statBoth").innerText = stats.both_groups;
         document.getElementById("statBothRecords").innerText = stats.both_records;
-
-
 
     } catch (err) {
         console.error("Stats load failed:", err);
     }
 }
 
-
-
 // ---------------- LOAD GROUPED VIEW ----------------
 async function loadGroupedView() {
     showLoading();
     
     try {
-        // Fetch data from backend with current filter
         const res = await authFetch(
             `/related-grouped?upload_id=${uploadId}&page=1&page_size=20&match_type=${currentFilter}`
         );
@@ -89,9 +123,9 @@ async function loadGroupedView() {
         
         const data = await res.json();
         
-        // Store the response for pagination purposes
         renderGroupedView(data);
         renderPagination(data.total_groups, data.page, data.page_size);
+        hideLoading();
         
     } catch (err) {
         console.error(err);
@@ -99,7 +133,6 @@ async function loadGroupedView() {
     }
 }
 
-// Load specific page with current filter
 async function loadGroupedViewWithPage() {
     showLoading();
     
@@ -113,6 +146,7 @@ async function loadGroupedViewWithPage() {
         const data = await res.json();
         renderGroupedView(data);
         renderPagination(data.total_groups, data.page, data.page_size);
+        hideLoading();
         
     } catch (err) {
         console.error(err);
@@ -123,33 +157,29 @@ async function loadGroupedViewWithPage() {
 // ---------------- FILTER FUNCTION ----------------
 function filterByType(filterType) {
     currentFilter = filterType;
-    currentPage = 1; // Reset to first page
+    currentPage = 1;
     
-    // Update button states
     document.getElementById("btnFilterAll").classList.toggle("active", filterType === 'all');
     document.getElementById("btnFilterEmail").classList.toggle("active", filterType === 'email');
     document.getElementById("btnFilterPhone").classList.toggle("active", filterType === 'phone');
     document.getElementById("btnFilterBoth").classList.toggle("active", filterType === 'both');
     
-    // Reload data from backend with new filter
     loadGroupedView();
 }
 
 function getPrimaryIdentifier(group) {
     if (!group.match_key) return "Unknown";
 
-    // match_key may contain multiple identifiers separated by |
     const parts = group.match_key.split("|").map(p => p.trim());
 
     if (group.match_type === "phone") {
         return parts.find(p => /\d/.test(p)) || parts[0];
     }
 
-    // email or merged → prefer email
     return parts.find(p => p.includes("@")) || parts[0];
 }
 
-// ---------------- RENDER GROUPED VIEW ----------------
+// ---------------- ✅ RENDER GROUPED VIEW WITH COLUMN ORDERING ----------------
 function renderGroupedView(data) {
     const container = document.getElementById('resultsContainer');
     
@@ -158,11 +188,10 @@ function renderGroupedView(data) {
         return;
     }
     
-    // No need for client-side pagination - backend already paginated
     let html = '';
     
     data.groups.forEach((group, index) => {
-        const groupId = `group-${data.page}-${index}`; // Unique ID per page
+        const groupId = `group-${data.page}-${index}`;
         const recordCount = group.records.length;
         
         html += `
@@ -193,31 +222,16 @@ function toggleGroup(groupId) {
     expandIcon.classList.toggle('collapsed');
 }
 
-// ---------------- RENDER GROUP TABLE ----------------
+// ---------------- ✅ RENDER GROUP TABLE WITH COLUMN ORDERING ----------------
 function renderGroupTable(records) {
     if (records.length === 0) return '<p>No records</p>';
     
-    const preferredOrder = [
-        "name",
-        "email",
-        "phone",
-        "city",
-        "address",
-        "address1",
-        "address2",
-        "position",
-        "zip",
-        "status"
-    ];
-
     const allColumns = records[0].data ? Object.keys(records[0].data) : [];
+    
+    // ✅ Apply column ordering
+    let columns = orderColumns(allColumns);
 
-    let columns = [
-        ...preferredOrder.filter(c => allColumns.includes(c)),
-        ...allColumns.filter(c => !preferredOrder.includes(c))
-    ];
-
-    // If normalized `email` or `phone` columns exist, hide other original-like columns
+    // Hide duplicate email/phone columns
     if (allColumns.map(c => c.toLowerCase()).includes('email')) {
         columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
     }
@@ -253,7 +267,7 @@ function renderGroupTable(records) {
     return html;
 }
 
-// ---------------- SEARCH ----------------
+// ---------------- ✅ SEARCH WITH LOADING STATE ----------------
 async function searchRelated() {
     const searchValue = document.getElementById("searchValue").value.trim();
     
@@ -290,24 +304,11 @@ async function searchRelated() {
         
         html += '<div class="group-records" style="max-height: none;"><table>';
         
-        const preferredOrder = [
-            "name",
-            "email",
-            "phone",
-            "city",
-            "address",
-            "address1",
-            "address2",
-            "status"
-        ];
-
         const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
-        let columns = [
-            ...preferredOrder.filter(c => allColumns.includes(c)),
-            ...allColumns.filter(c => !preferredOrder.includes(c))
-        ];
+        
+        // ✅ Apply column ordering
+        let columns = orderColumns(allColumns);
 
-        // Hide original-like email/phone columns when normalized versions exist
         if (allColumns.map(c => c.toLowerCase()).includes('email')) {
             columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
         }
@@ -339,6 +340,7 @@ async function searchRelated() {
         
         container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
+        hideLoading();
         
     } catch (err) {
         console.error(err);
@@ -426,22 +428,15 @@ function addPageButton(pageNum, currentPageNum) {
 }
 
 // ---------------- HELPERS ----------------
-function showLoading() {
-    document.getElementById("resultsContainer").innerHTML = `
-        <div style="text-align: center; padding: 60px; color: #666;">
-            ⏳ Loading...
-        </div>
-    `;
-}
-
 function goBack() {
     window.location.href = `/preview.html?upload_id=${uploadId}`;
 }
 
-// ---------------- INIT ----------------
+// ---------------- ✅ INIT - Load metadata, stats, and data ----------------
 async function init() {
-    await loadStats();
-    await loadGroupedView();
+    await loadFileMetadata(); // ✅ Load filename
+    await loadStats();        // Load statistics
+    await loadGroupedView();  // Load grouped data
 }
 
 init();

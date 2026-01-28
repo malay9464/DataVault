@@ -10,12 +10,24 @@
 <div class="container">
     <div class="card">
         
+        <!-- ✅ NEW: File Context Display -->
+        <div id="fileContext" style="
+            padding: 8px 12px;
+            background: #f9fafb;
+            border-left: 3px solid #10b981;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #6b7280;
+            display: none;
+        ">
+            📄 <span id="fileName" style="color: #374151; font-weight: 500;">Loading...</span>
+        </div>
+
         <!-- Header -->
         <div class="header-row">
             <h2 class="page-title">🔗 Related Records</h2>
             <button class="btn-back" onclick="goBack()">← Back to Preview</button>
         </div>
-
 
         <!-- Statistics Bar -->
         <div class="stats-bar">
@@ -39,17 +51,10 @@
                 <span class="stat-label">Both (Email + Phone)</span>
                 <span class="stat-value" id="statBoth">-</span>
             </div>
-                <div class="stat-item">
+            <div class="stat-item">
                 <span class="stat-label">Both Records</span>
                 <span class="stat-value" id="statBothRecords">-</span>
             </div>
-        </div>
-
-        <!-- View Toggle -->
-        <div class="view-toggle">
-            <!-- <button id="btnGroupedView" class="active" onclick="switchView('grouped')">
-                📦 Grouped View
-            </button> -->
         </div>
 
         <!-- Filter Panel -->
@@ -72,7 +77,6 @@
                 <button class="btn-secondary" onclick="resetSearch()">Reset</button>
             </div>
         </div>
-
 
         <hr style="
             border: none;

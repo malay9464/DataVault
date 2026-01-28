@@ -23,63 +23,96 @@
 <body>
 
 <div class="container">
+    <!-- ✅ NEW: File Context Display -->
+    <div id="fileContext" style="
+        padding: 8px 12px;
+        background: #f9fafb;
+        border-left: 3px solid #3b82f6;
+        margin-bottom: 20px;
+        font-size: 14px;
+        color: #6b7280;
+        display: none;
+    ">
+        📄 <span id="fileName" style="color: #374151; font-weight: 500;">Loading...</span>
+    </div>
+
     <h2>Uploaded Data</h2>
 
     <div class="controls">
-    <div class="left-controls">
-        Show
-        <select id="pageSize">
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
-            <option value="500">500</option>
-        </select>
-        rows
+        <div class="left-controls">
+            Show
+            <select id="pageSize">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+            </select>
+            rows
+        </div>
+
+        <div class="export-controls">
+            <select id="exportFormat">
+                <option value="csv">CSV</option>
+                <option value="excel">Excel</option>
+            </select>
+
+            <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
+                <span id="exportText">Export</span>
+                <span id="exportSpinner" class="spinner" style="display:none;"></span>
+            </button>
+
+            <button 
+                class="btn-related" 
+                onclick="openRelatedRecords()"
+                style="
+                    background: #10b981;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    margin-left: 10px;
+                "
+            >
+                🔗 View Related Records
+            </button>
+        </div>
     </div>
 
-    <div class="export-controls">
-        <select id="exportFormat">
-            <option value="csv">CSV</option>
-            <option value="excel">Excel</option>
-        </select>
-
-        <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
-            <span id="exportText">Export</span>
-            <span id="exportSpinner" class="spinner" style="display:none;"></span>
-        </button>
-
-<!-- In the header actions div, add: -->
-<button 
-    class="btn-related" 
-    onclick="openRelatedRecords()"
-    style="
-        background: #10b981;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: 500;
-        margin-left: 10px;
-    "
->
-    🔗 View Related Records
-</button>
-
-<!-- Then add this JavaScript function in preview.js -->
-
+    <!-- ✅ NEW: Loading State Container -->
+    <div id="loadingState" style="
+        text-align: center;
+        padding: 60px;
+        color: #9ca3af;
+        font-size: 16px;
+        display: none;
+    ">
+        ⏳ Loading data...
     </div>
-</div>
 
-
-    <div class="table-wrapper">
+    <div class="table-wrapper" id="tableWrapper">
         <table id="dataTable"></table>
     </div>
 
     <div class="pagination" id="pagination"></div>
 </div>
 
-<!-- JS -->
+<!-- Related Records Modal -->
+<div id="relatedModal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Related Records (Within This File)</h3>
+        <p id="relatedMatchInfo"></p>
+
+        <table id="relatedTable">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+
+        <button onclick="closeRelatedModal()">Close</button>
+    </div>
+</div>
+
 <script src="/static/js/preview.js"></script>
 </body>
 </html>

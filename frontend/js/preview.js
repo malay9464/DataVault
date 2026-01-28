@@ -23,7 +23,6 @@ async function authFetch(url, options = {}) {
     return res;
 }
 
-
 /* ---------- PARAMS ---------- */
 const params = new URLSearchParams(window.location.search);
 const uploadId = params.get("upload_id");
@@ -32,6 +31,38 @@ let page = 1;
 let pageSize = 50;
 let totalRecords = 0;
 
+/* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
+function orderColumns(columns) {
+    // Priority order: name, email, phone first
+    const priority = ["name", "email", "phone"];
+    
+    const priorityColumns = priority.filter(col => columns.includes(col));
+    const remainingColumns = columns.filter(col => !priority.includes(col));
+    
+    return [...priorityColumns, ...remainingColumns];
+}
+
+/* ---------- ✅ LOAD FILE METADATA ---------- */
+async function loadFileMetadata() {
+    try {
+        const res = await authFetch(`/upload-metadata?upload_id=${uploadId}`);
+        
+        if (!res.ok) {
+            console.error("Failed to load file metadata");
+            return;
+        }
+        
+        const metadata = await res.json();
+        
+        // Display filename
+        document.getElementById("fileName").textContent = metadata.filename;
+        document.getElementById("fileContext").style.display = "block";
+        
+    } catch (err) {
+        console.error("Error loading file metadata:", err);
+    }
+}
+
 /* ---------- PAGE SIZE ---------- */
 document.getElementById("pageSize").onchange = e => {
     pageSize = parseInt(e.target.value);
@@ -39,25 +70,43 @@ document.getElementById("pageSize").onchange = e => {
     loadData();
 };
 
-/* ---------- LOAD DATA ---------- */
-async function loadData() {
-    const res = await authFetch(
-        `/preview?upload_id=${uploadId}&page=${page}&page_size=${pageSize}`
-    );
-
-    if (!res.ok) {
-        alert("Unauthorized or data not found");
-        return;
-    }
-
-    const data = await res.json();
-    totalRecords = data.total_records;
-
-    renderTable(data);
-    renderPagination(Math.ceil(totalRecords / pageSize));
+/* ---------- ✅ LOADING STATE HELPERS ---------- */
+function showLoading() {
+    document.getElementById("loadingState").style.display = "block";
+    document.getElementById("tableWrapper").style.display = "none";
 }
 
-/* ---------- TABLE ---------- */
+function hideLoading() {
+    document.getElementById("loadingState").style.display = "none";
+    document.getElementById("tableWrapper").style.display = "block";
+}
+
+/* ---------- LOAD DATA ---------- */
+async function loadData() {
+    showLoading(); // ✅ Show loading indicator
+    
+    try {
+        const res = await authFetch(
+            `/preview?upload_id=${uploadId}&page=${page}&page_size=${pageSize}`
+        );
+
+        if (!res.ok) {
+            alert("Unauthorized or data not found");
+            return;
+        }
+
+        const data = await res.json();
+        totalRecords = data.total_records;
+
+        renderTable(data);
+        renderPagination(Math.ceil(totalRecords / pageSize));
+        
+    } finally {
+        hideLoading(); // ✅ Hide loading indicator after data loads
+    }
+}
+
+/* ---------- ✅ TABLE WITH COLUMN ORDERING ---------- */
 function renderTable(data) {
     const table = document.getElementById("dataTable");
     table.innerHTML = "";
@@ -67,17 +116,25 @@ function renderTable(data) {
         return;
     }
 
+    // ✅ Apply column ordering
+    const orderedColumns = orderColumns(data.columns);
+
     // Header
     table.innerHTML =
         "<tr>" +
-        data.columns.map(c => `<th>${c}</th>`).join("") +
+        orderedColumns.map(c => `<th>${c}</th>`).join("") +
         "</tr>";
 
-    // Rows
+    // Rows - reorder values to match ordered columns
     data.rows.forEach(r => {
+        const rowData = {};
+        data.columns.forEach((col, idx) => {
+            rowData[col] = r.values[idx];
+        });
+        
         table.innerHTML +=
             "<tr>" +
-            r.values.map(v => `<td>${v ?? ""}</td>`).join("") +
+            orderedColumns.map(col => `<td>${rowData[col] ?? ""}</td>`).join("") +
             "</tr>";
     });
 }
@@ -149,7 +206,6 @@ function exportData(format) {
     const text = document.getElementById("exportText");
     const spinner = document.getElementById("exportSpinner");
 
-    // Disable button + show spinner
     btn.disabled = true;
     spinner.style.display = "inline-block";
     text.innerText = "Exporting...";
@@ -176,14 +232,11 @@ function exportData(format) {
             window.location.href = "/static/login.html";
         })
         .finally(() => {
-            // Restore button state
             btn.disabled = false;
             spinner.style.display = "none";
             text.innerText = "Export";
         });
 }
-
-loadData();
 
 /* ---------- RELATED RECORDS ---------- */
 async function viewRelated(rowId) {
@@ -235,35 +288,19 @@ function closeRelatedModal() {
     document.getElementById("relatedModal").classList.add("hidden");
 }
 
-function openRelatedPage() {
-    window.location.href = `/static/related.html?upload_id=${uploadId}`;
-}
-
-
-// Add this function to your preview.js file
-
 function openRelatedRecords() {
-    const params = new URLSearchParams(window.location.search);
-    const uploadId = params.get("upload_id");
-    
-    if (!uploadId) {
-        alert("No upload ID found");
-        return;
-    }
-
-    console.log("Opening related records for upload:", uploadId);
-    window.location.href = `/related.html?upload_id=${uploadId}`;
-}
-
-function openRelatedRecords() {
-    const params = new URLSearchParams(window.location.search);
-    const uploadId = params.get("upload_id");
-    
     if (!uploadId) {
         alert("No upload ID found");
         return;
     }
     
-    console.log("Opening related records for upload:", uploadId);
     window.location.href = `/related.html?upload_id=${uploadId}`;
 }
+
+/* ---------- ✅ INIT - Load metadata and data ---------- */
+async function init() {
+    await loadFileMetadata(); // ✅ Load filename first
+    await loadData();          // Then load data
+}
+
+init();
