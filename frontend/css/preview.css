@@ -1,258 +1,551 @@
-body {
-    font-family: "Segoe UI";
-    background: #f4f6f8;
-    margin: 0;
-}
-
-.container {
-    width: 95%;
-    margin: 30px auto;
-    background: white;
-    padding: 24px;
-    border-radius: 14px;
-}
-
-h2 {
-    margin-top: 0;
-}
-
-/* ---------- CONTROLS ---------- */
-.controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 14px;
-}
-
-select,
-button {
-    padding: 7px 12px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-}
-
-button {
-    background: #2563eb;
-    color: white;
-    cursor: pointer;
-}
-
-/* ---------- TABLE ---------- */
-.table-wrapper {
-    overflow-x: auto;
-    max-height: 70vh;
-}
-
-table {
-    width: 100%;
-    min-width: 1200px;
-    border-collapse: collapse;
-}
-
-th,
-td {
-    padding: 9px;
-    border-bottom: 1px solid #e5e7eb;
-    white-space: nowrap;
-}
-
-th {
-    background: #2563eb;
-    color: white;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-tr:hover td {
-    background: #f1f5f9;
-}
-
-/* ---------- PAGINATION ---------- */
-.pagination {
-    margin-top: 18px;
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-.pagination button {
-    background: white;
-    color: #111;
-    border: 1px solid #ccc;
-}
-
-.pagination button.active {
-    background: #2563eb;
-    color: white;
-    font-weight: bold;
-}
-
-/* ---------- CONTROLS BAR ---------- */
-.controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    gap: 16px;
-}
-
-/* Left side (page size) */
-.left-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Right side (export) */
-.export-controls {
+/* ===============================
+   FILE BAR
+   =============================== */
+.file-bar {
     display: flex;
     align-items: center;
     gap: 10px;
-}
-
-/* ---------- SELECT (MODERN) ---------- */
-.controls select {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid #d1d5db;
-    background: #ffffff;
+    padding: 10px 14px;
+    background: #f9fafb;
+    border-radius: 6px;
+    margin-bottom: 12px;
     font-size: 14px;
-    cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    color: #374151;
 }
 
-.controls select:hover {
-    border-color: #93c5fd;
+.file-indicator {
+    width: 3px;
+    height: 18px;
+    background: #2563eb;
+    border-radius: 2px;
 }
 
-.controls select:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+/* ===============================
+   HEADER BAR
+   =============================== */
+.header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
 }
 
-/* ---------- EXPORT BUTTON ---------- */
-.export-controls button {
+.header-bar h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
+}
+
+/* ===============================
+   HEADER ACTIONS
+   =============================== */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.rows-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+}
+
+.rows-control select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+}
+
+/* Export */
+.export-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.export-control select,
+.export-control button {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    font-size: 14px;
+}
+
+.export-control button {
     background: #2563eb;
     color: white;
     border: none;
-    padding: 8px 16px;
+    cursor: pointer;
+}
+
+.export-control button:hover {
+    background: #1d4ed8;
+}
+
+/* Related Button */
+.related-btn {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 8px 14px;
     border-radius: 8px;
     font-size: 14px;
-    font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease;
+    font-weight: 500;
 }
 
-.export-controls button:hover {
-    background: #1e40af;
-    transform: translateY(-1px);
+.related-btn:hover {
+    background: #059669;
 }
 
-.export-controls button:active {
-    transform: translateY(0);
-}
+/* ============================================
+   IMPROVED TABLE STYLING WITH PROPER WIDTHS
+   ============================================ */
 
-/* ---------- SPINNER ---------- */
-.spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255,255,255,0.4);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    display: inline-block;
-    margin-left: 8px;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Disabled export button */
-.export-controls button:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-.modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal.hidden {
-  display: none;
-}
-
-.modal-content {
-  background: white;
-  padding: 20px;
-  width: 80%;
-  max-height: 80%;
-  overflow-y: auto;
-  border-radius: 8px;
-}
-
-.group-records {
+.table-wrapper {
     overflow-x: auto;
-    width: 100%;
+    overflow-y: auto;
+    margin: 20px 0;
+    max-height: 70vh;
+    position: relative;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.group-records table {
+#dataTable {
     width: 100%;
-    min-width: 1200px; /* allows scroll instead of squeezing */
     border-collapse: collapse;
+    table-layout: fixed; /* ✅ Changed from fixed to auto for better initial sizing */
+    background: white;
 }
 
-/* ---------- RELATED RECORDS TABLE LAYOUT ---------- */
+/* ============================================
+   TABLE HEADERS - BETTER STYLING
+   ============================================ */
 
-.group-records {
-    overflow-x: auto;          /* allow horizontal scroll */
-    width: 100%;
-}
-
-.group-records table {
-    width: 100%;
-    min-width: 1200px;         /* prevents squishing */
-    border-collapse: collapse;
-}
-
-.group-records th,
-.group-records td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #e5e7eb;
-
-    /* 👇 THIS fixes Excel-like stretching */
-    white-space: nowrap;
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-
-    font-size: 14px;
-}
-
-/* Sticky header so column names are always visible */
-.group-records th {
-    background: #f9fafb;
-    font-weight: 600;
+#dataTable thead th{
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: 20;
 }
 
-/* ---------- FIX TABLE HEADER VISIBILITY ---------- */
+#dataTable th {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    padding: 14px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    position: relative;
+    cursor: default;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    
+    /* ✅ CRITICAL: Set minimum and default widths */
+    min-width: 120px; /* Minimum 120px - ensures readability */
+    width: auto;
+}
 
-.group-records th {
-    color: #111827 !important;   /* force dark text */
-    background: #f3f4f6;         /* light gray header background */
+/* Special widths for common columns */
+#dataTable th[data-column="name"] {
+    min-width: 150px;
+    width: 180px;
+}
+
+#dataTable th[data-column="email"] {
+    min-width: 200px;
+    width: 220px;
+}
+
+#dataTable th[data-column="phone"] {
+    min-width: 130px;
+    width: 140px;
+}
+
+#dataTable th[data-column*="address"],
+#dataTable th[data-column*="resume"],
+#dataTable th[data-column*="description"] {
+    min-width: 200px;
+    width: 250px;
+}
+
+#dataTable th[data-column*="id"],
+#dataTable th[data-column*="code"] {
+    min-width: 100px;
+    width: 120px;
+}
+
+/* Last column removes right border */
+#dataTable th:last-child {
+    border-right: none;
+}
+
+/* ============================================
+   RESIZE HANDLE - BETTER VISIBILITY
+   ============================================ */
+
+#dataTable th .resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px; /* ✅ Wider for easier grabbing */
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 10;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+#dataTable th .resize-handle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+#dataTable th .resize-handle:active {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================
+   TABLE CELLS - PROPER TRUNCATION
+   ============================================ */
+
+#dataTable td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    font-size: 14px;
+    color: #374151;
+    z-index: 1;
+    
+    /* ✅ Truncation with ellipsis */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    
+    /* ✅ CRITICAL: Match header minimum widths */
+    min-width: 120px;
+    
+    /* Make clickable */
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s;
+}
+
+/* ============================================
+   HOVER & INTERACTIVE STATES
+   ============================================ */
+
+#dataTable tbody tr {
+    transition: background-color 0.15s;
+}
+
+#dataTable tbody tr:hover {
+    background-color: #f0f9ff;
+}
+
+#dataTable td:hover {
+    background-color: #dbeafe;
+    color: #1e40af;
+    box-shadow: inset 0 0 0 1px #3b82f6;
+}
+
+/* Icon to indicate expandable cell */
+#dataTable td.has-long-text::after {
+    content: ' 🔍';
+    font-size: 11px;
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#dataTable td.has-long-text:hover::after {
+    opacity: 0.7;
+}
+
+/* Zebra striping */
+#dataTable tbody tr:nth-child(even) {
+    background-color: #f9fafb;
+}
+
+#dataTable tbody tr:nth-child(odd) {
+    background-color: #ffffff;
+}
+
+/* ============================================
+   MODAL - BETTER STYLING
+   ============================================ */
+
+.cell-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s;
+}
+
+.cell-modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cell-modal-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 700px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 
+                0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.cell-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.cell-modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    text-transform: capitalize;
+}
+
+.cell-modal-close {
+    background: #f3f4f6;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.cell-modal-close:hover {
+    background-color: #e5e7eb;
+    color: #1f2937;
+    transform: scale(1.1);
+}
+
+.cell-modal-body {
+    font-size: 15px;
+    line-height: 1.7;
+    color: #374151;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background: #f9fafb;
+    padding: 16px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ============================================
+   TOOLTIP - IMPROVED DESIGN
+   ============================================ */
+
+.cell-tooltip {
+    position: absolute;
+    background: #1f2937;
+    color: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 400px; /* ✅ Wider tooltip */
+    word-wrap: break-word;
+    z-index: 999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+.cell-tooltip.active {
+    opacity: 1;
+}
+
+.cell-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 20px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid #1f2937;
+}
+
+/* ============================================
+   RESIZE INDICATOR LINE
+   ============================================ */
+
+.resize-line {
+    position: absolute; /* ✅ Fixed positioning for better visibility */
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #3b82f6;
+    box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
+    pointer-events: none;
+    z-index: 50;
+    display: none;
+}
+
+.resize-line.active {
+    display: block;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-30px) scale(0.95);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+.table-wrapper::-webkit-scrollbar,
+.cell-modal-body::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar-track,
+.cell-modal-body::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb,
+.cell-modal-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover,
+.cell-modal-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+
+@media (max-width: 768px) {
+    #dataTable th {
+        min-width: 100px;
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+    
+    #dataTable td {
+        min-width: 100px;
+        padding: 10px 8px;
+        font-size: 13px;
+    }
+    
+    .cell-modal-content {
+        max-width: 90%;
+        padding: 20px;
+    }
+}
+
+/* ===============================
+   PAGINATION (CENTERED & MODERN)
+   =============================== */
+
+.pagination {
+    display: flex;
+    justify-content: center;   /* ✅ center horizontally */
+    align-items: center;
+    gap: 6px;
+    margin: 24px 0;
+    font-size: 14px;
+    user-select: none;
+}
+
+/* Pagination buttons */
+.pagination button {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #374151;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+/* Hover */
+.pagination button:hover:not(:disabled):not(.active) {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+}
+
+/* Active page */
+.pagination button.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+}
+
+/* Disabled buttons */
+.pagination button:disabled {
+    background: #f9fafb;
+    color: #9ca3af;
+    cursor: not-allowed;
+    border-color: #e5e7eb;
+}
+
+/* Ellipsis (...) */
+.pagination span {
+    padding: 0 6px;
+    color: #6b7280;
+    font-weight: 500;
 }

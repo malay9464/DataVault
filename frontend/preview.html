@@ -1,86 +1,56 @@
 <!DOCTYPE html>
 <html>
 <head>
+    
     <title>Preview Data</title>
 
     <!-- CSS -->
     <link rel="stylesheet" href="/static/css/preview.css">
 </head>
-<div id="relatedModal" class="modal hidden">
-  <div class="modal-content">
-    <h3>Related Records (Within This File)</h3>
-    <p id="relatedMatchInfo"></p>
 
-    <table id="relatedTable">
-      <thead></thead>
-      <tbody></tbody>
-    </table>
-
-    <button onclick="closeRelatedModal()">Close</button>
-  </div>
-</div>
 
 <body>
-
 <div class="container">
-    <!-- ✅ NEW: File Context Display -->
-    <div id="fileContext" style="
-        padding: 8px 12px;
-        background: #f9fafb;
-        border-left: 3px solid #3b82f6;
-        margin-bottom: 20px;
-        font-size: 14px;
-        color: #6b7280;
-        display: none;
-    ">
-        📄 <span id="fileName" style="color: #374151; font-weight: 500;">Loading...</span>
+
+    <!-- FILE BAR -->
+    <div class="file-bar">
+        <span class="file-indicator"></span>
+        <span id="fileName">Loading...</span>
     </div>
 
-    <h2>Uploaded Data</h2>
+    <!-- HEADER BAR -->
+    <div class="header-bar">
+        <h2>Uploaded Data</h2>
 
-    <div class="controls">
-        <div class="left-controls">
-            Show
-            <select id="pageSize">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-                <option value="500">500</option>
-            </select>
-            rows
-        </div>
+        <div class="header-actions">
+            <div class="rows-control">
+                <span>Show</span>
+                <select id="pageSize">
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+                <span>rows</span>
+            </div>
 
-        <div class="export-controls">
-            <select id="exportFormat">
-                <option value="csv">CSV</option>
-                <option value="excel">Excel</option>
-            </select>
+            <div class="export-control">
+                <select id="exportFormat">
+                    <option value="csv">CSV</option>
+                    <option value="excel">Excel</option>
+                </select>
+                <button id="exportBtn" onclick="exportData(exportFormat.value)">
+                    Export
+                </button>
+            </div>
 
-            <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
-                <span id="exportText">Export</span>
-                <span id="exportSpinner" class="spinner" style="display:none;"></span>
-            </button>
-
-            <button 
-                class="btn-related" 
-                onclick="openRelatedRecords()"
-                style="
-                    background: #10b981;
-                    color: white;
-                    padding: 10px 20px;
-                    border: none;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-weight: 500;
-                    margin-left: 10px;
-                "
-            >
+            <button class="related-btn" onclick="openRelatedRecords()">
                 🔗 View Related Records
             </button>
         </div>
     </div>
 
-    <!-- ✅ NEW: Loading State Container -->
+        <!-- ✅ NEW: Loading State Container -->
     <div id="loadingState" style="
         text-align: center;
         padding: 60px;
@@ -93,24 +63,11 @@
 
     <div class="table-wrapper" id="tableWrapper">
         <table id="dataTable"></table>
+        <!-- ✅ ADD THIS LINE -->
+        <div class="resize-line" id="resizeLine"></div>
     </div>
 
-    <div class="pagination" id="pagination"></div>
-</div>
-
-<!-- Related Records Modal -->
-<div id="relatedModal" class="modal hidden">
-    <div class="modal-content">
-        <h3>Related Records (Within This File)</h3>
-        <p id="relatedMatchInfo"></p>
-
-        <table id="relatedTable">
-            <thead></thead>
-            <tbody></tbody>
-        </table>
-
-        <button onclick="closeRelatedModal()">Close</button>
-    </div>
+<div class="pagination" id="pagination"></div>
 </div>
 
 <script src="/static/js/preview.js"></script>

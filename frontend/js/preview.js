@@ -30,36 +30,27 @@ const uploadId = params.get("upload_id");
 let page = 1;
 let pageSize = 50;
 let totalRecords = 0;
+let columnWidths = {}; // Store custom column widths
 
-/* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
+/* ---------- COLUMN ORDERING ---------- */
 function orderColumns(columns) {
-    // Priority order: name, email, phone first
     const priority = ["name", "email", "phone"];
-    
     const priorityColumns = priority.filter(col => columns.includes(col));
     const remainingColumns = columns.filter(col => !priority.includes(col));
-    
     return [...priorityColumns, ...remainingColumns];
 }
 
-/* ---------- ✅ LOAD FILE METADATA ---------- */
+/* ---------- LOAD FILE METADATA ---------- */
 async function loadFileMetadata() {
     try {
         const res = await authFetch(`/upload-metadata?upload_id=${uploadId}`);
-        
-        if (!res.ok) {
-            console.error("Failed to load file metadata");
-            return;
-        }
+        if (!res.ok) return;
         
         const metadata = await res.json();
-        
-        // Display filename
         document.getElementById("fileName").textContent = metadata.filename;
         document.getElementById("fileContext").style.display = "block";
-        
     } catch (err) {
-        console.error("Error loading file metadata:", err);
+        console.error("Error loading metadata:", err);
     }
 }
 
@@ -70,7 +61,7 @@ document.getElementById("pageSize").onchange = e => {
     loadData();
 };
 
-/* ---------- ✅ LOADING STATE HELPERS ---------- */
+/* ---------- LOADING STATE ---------- */
 function showLoading() {
     document.getElementById("loadingState").style.display = "block";
     document.getElementById("tableWrapper").style.display = "none";
@@ -83,7 +74,7 @@ function hideLoading() {
 
 /* ---------- LOAD DATA ---------- */
 async function loadData() {
-    showLoading(); // ✅ Show loading indicator
+    showLoading();
     
     try {
         const res = await authFetch(
@@ -100,13 +91,29 @@ async function loadData() {
 
         renderTable(data);
         renderPagination(Math.ceil(totalRecords / pageSize));
-        
     } finally {
-        hideLoading(); // ✅ Hide loading indicator after data loads
+        hideLoading();
     }
 }
 
-/* ---------- ✅ TABLE WITH COLUMN ORDERING ---------- */
+/* ---------- SMART DEFAULT WIDTHS ---------- */
+function getDefaultWidth(columnName) {
+    const col = columnName.toLowerCase();
+    
+    if (col.includes('email') || col.includes('mail')) return 220;
+    if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 140;
+    if (col.includes('name')) return 180;
+    if (col.includes('address') || col.includes('resume') || col.includes('description')) return 250;
+    if (col.includes('id') || col.includes('code')) return 120;
+    if (col.includes('city') || col.includes('state') || col.includes('zip')) return 130;
+    if (col.includes('date') || col.includes('time')) return 140;
+    if (col.includes('age') || col.includes('level')) return 100;
+    if (col.includes('gender') || col.includes('active')) return 100;
+    
+    return 150; // Default
+}
+
+/* ---------- RENDER TABLE ---------- */
 function renderTable(data) {
     const table = document.getElementById("dataTable");
     table.innerHTML = "";
@@ -116,26 +123,113 @@ function renderTable(data) {
         return;
     }
 
-    // ✅ Apply column ordering
     const orderedColumns = orderColumns(data.columns);
 
-    // Header
-    table.innerHTML =
-        "<tr>" +
-        orderedColumns.map(c => `<th>${c}</th>`).join("") +
-        "</tr>";
+    // Build header with resize handles
+    let html = "<thead><tr>";
+    orderedColumns.forEach((col, index) => {
+        const width = columnWidths[col] || getDefaultWidth(col);
+        html += `
+            <th style="width: ${width}px; min-width: ${width}px; max-width: ${width}px;" data-column="${col}" data-index="${index}">
+                ${col}
+                <div class="resize-handle"></div>
+            </th>
+        `;
+    });
+    html += "</tr></thead>";
 
-    // Rows - reorder values to match ordered columns
+    // Build body
+    html += "<tbody>";
     data.rows.forEach(r => {
         const rowData = {};
         data.columns.forEach((col, idx) => {
             rowData[col] = r.values[idx];
         });
         
-        table.innerHTML +=
-            "<tr>" +
-            orderedColumns.map(col => `<td>${rowData[col] ?? ""}</td>`).join("") +
-            "</tr>";
+        html += "<tr>";
+        orderedColumns.forEach(col => {
+            const value = rowData[col] ?? "";
+            html += `<td>${value || "-"}</td>`;
+        });
+        html += "</tr>";
+    });
+    html += "</tbody>";
+
+    table.innerHTML = html;
+
+    // Attach resize functionality
+    attachResizeHandlers();
+}
+
+/* ---------- COLUMN RESIZE FUNCTIONALITY ---------- */
+function attachResizeHandlers() {
+    const table = document.getElementById('dataTable');
+    const handles = table.querySelectorAll('.resize-handle');
+    const resizeLine = document.getElementById('resizeLine');
+    const wrapper = document.getElementById('tableWrapper');
+
+    let isResizing = false;
+    let currentTh = null;
+    let currentColumn = null;
+    let startX = 0;
+    let startWidth = 0;
+
+    handles.forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            isResizing = true;
+            currentTh = handle.closest('th');
+            currentColumn = currentTh.dataset.column;
+            startX = e.clientX;
+            startWidth = currentTh.offsetWidth;
+
+            const wrapperRect = wrapper.getBoundingClientRect();
+            resizeLine.style.left =
+              (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+
+            resizeLine.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(120, startWidth + diff);
+
+        currentTh.style.width = newWidth + 'px';
+        currentTh.style.minWidth = newWidth + 'px';
+        currentTh.style.maxWidth = newWidth + 'px';
+
+        const columnIndex = parseInt(currentTh.dataset.index);
+        const cells = table.querySelectorAll(
+          `tbody tr td:nth-child(${columnIndex + 1})`
+        );
+
+        cells.forEach(cell => {
+            cell.style.width = newWidth + 'px';
+            cell.style.minWidth = newWidth + 'px';
+            cell.style.maxWidth = newWidth + 'px';
+        });
+
+        columnWidths[currentColumn] = newWidth;
+
+        const wrapperRect = wrapper.getBoundingClientRect();
+        resizeLine.style.left =
+          (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isResizing) return;
+
+        isResizing = false;
+        resizeLine.classList.remove('active');
+        document.body.style.cursor = 'default';
+        document.body.style.userSelect = 'auto';
     });
 }
 
@@ -239,68 +333,18 @@ function exportData(format) {
 }
 
 /* ---------- RELATED RECORDS ---------- */
-async function viewRelated(rowId) {
-    const res = await authFetch(
-        `/related-records?upload_id=${uploadId}&row_id=${rowId}`
-    );
-
-    if (!res.ok) {
-        alert("Failed to load related records");
-        return;
-    }
-
-    const data = await res.json();
-
-    document.getElementById("relatedMatchInfo").innerText =
-        `Matched Email: ${data.match_email || "N/A"} | ` +
-        `Matched Phone: ${data.match_phone || "N/A"} | ` +
-        `Total: ${data.total}`;
-
-    const table = document.getElementById("relatedTable");
-    const thead = table.querySelector("thead");
-    const tbody = table.querySelector("tbody");
-
-    thead.innerHTML = "";
-    tbody.innerHTML = "";
-
-    if (data.records.length === 0) {
-        tbody.innerHTML = "<tr><td>No related records</td></tr>";
-    } else {
-        const columns = Object.keys(data.records[0].data);
-
-        thead.innerHTML =
-            "<tr>" +
-            columns.map(c => `<th>${c}</th>`).join("") +
-            "</tr>";
-
-        data.records.forEach(r => {
-            tbody.innerHTML +=
-                "<tr>" +
-                columns.map(c => `<td>${r.data[c] ?? ""}</td>`).join("") +
-                "</tr>";
-        });
-    }
-
-    document.getElementById("relatedModal").classList.remove("hidden");
-}
-
-function closeRelatedModal() {
-    document.getElementById("relatedModal").classList.add("hidden");
-}
-
 function openRelatedRecords() {
     if (!uploadId) {
         alert("No upload ID found");
         return;
     }
-    
     window.location.href = `/related.html?upload_id=${uploadId}`;
 }
 
-/* ---------- ✅ INIT - Load metadata and data ---------- */
+/* ---------- INIT ---------- */
 async function init() {
-    await loadFileMetadata(); // ✅ Load filename first
-    await loadData();          // Then load data
+    await loadFileMetadata();
+    await loadData();
 }
 
 init();
