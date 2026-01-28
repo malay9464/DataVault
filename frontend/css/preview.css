@@ -9,7 +9,7 @@
     background: #f9fafb;
     border-radius: 6px;
     margin-bottom: 12px;
-    font-size: 14px;
+    font-size: 18px;
     color: #374151;
 }
 
@@ -32,7 +32,7 @@
 
 .header-bar h2 {
     margin: 0;
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 600;
     color: #111827;
 }
@@ -50,7 +50,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 14px;
+    font-size: 18px;
 }
 
 .rows-control select {

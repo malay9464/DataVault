@@ -211,6 +211,8 @@ function renderGroupedView(data) {
     });
     
     container.innerHTML = html;
+    container.querySelectorAll('.group-table-scroll')
+        .forEach(scroll => attachGroupResizeHandlers(scroll));
 }
 
 // ---------------- TOGGLE GROUP ----------------
@@ -239,15 +241,25 @@ function renderGroupTable(records) {
         columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
     }
     
-    let html = '<table>';
-    
+    let html = `
+        <div class="group-records">
+            <div class="group-table-scroll">
+                <div class="resize-line"></div>
+                <table>
+    `;
+
     // Header
     html += '<thead><tr>';
-    columns.forEach(col => {
-        html += `<th>${col}</th>`;
+    columns.forEach((col, index) => {
+        html += `
+            <th data-index="${index}">
+                ${col}
+                <div class="resize-handle"></div>
+            </th>
+        `;
     });
     html += '</tr></thead>';
-    
+
     // Rows
     html += '<tbody>';
     records.forEach(record => {
@@ -263,7 +275,11 @@ function renderGroupTable(records) {
     });
     html += '</tbody>';
     
-    html += '</table>';
+    html += `
+                </table>
+            </div>
+        </div>
+    `;
     return html;
 }
 
@@ -426,6 +442,67 @@ function addPageButton(pageNum, currentPageNum) {
     };
     document.getElementById("relatedPagination").appendChild(btn);
 }
+
+function attachGroupResizeHandlers(container) {
+    const table = container.querySelector('table');
+    const handles = table.querySelectorAll('.resize-handle');
+    const resizeLine = container.querySelector('.resize-line');
+
+    let startX = 0;
+    let startWidth = 0;
+    let currentTh = null;
+
+    handles.forEach(handle => {
+        handle.addEventListener('mousedown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            currentTh = handle.closest('th');
+            startX = e.clientX;
+            startWidth = currentTh.offsetWidth;
+
+            resizeLine.classList.add('active');
+        });
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!currentTh) return;
+
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(140, startWidth + diff);
+
+        // 🔒 lock column width
+        currentTh.style.width = newWidth + 'px';
+        currentTh.style.minWidth = newWidth + 'px';
+        currentTh.style.maxWidth = newWidth + 'px';
+
+        const index = parseInt(currentTh.dataset.index, 10);
+
+        // 🔒 lock body cells
+        table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)
+            .forEach(td => {
+                td.style.width = newWidth + 'px';
+                td.style.minWidth = newWidth + 'px';
+                td.style.maxWidth = newWidth + 'px';
+            });
+
+        // 🔥 CRITICAL: prevent other columns from shrinking
+        table.style.minWidth = table.scrollWidth + 'px';
+
+        const scrollLeft = container.scrollLeft;
+
+        resizeLine.style.left =
+            (currentTh.offsetLeft + currentTh.offsetWidth - scrollLeft) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!currentTh) return;
+
+        currentTh = null;
+        resizeLine.classList.remove('active');
+    });
+}
+
 
 // ---------------- HELPERS ----------------
 function goBack() {
