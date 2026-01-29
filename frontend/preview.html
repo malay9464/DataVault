@@ -50,24 +50,20 @@
         </div>
     </div>
 
-        <!-- ✅ NEW: Loading State Container -->
-    <div id="loadingState" style="
-        text-align: center;
-        padding: 60px;
-        color: #9ca3af;
-        font-size: 16px;
-        display: none;
-    ">
+        <!-- Loading State Container -->
+    <div id="loadingState">
         ⏳ Loading data...
     </div>
 
     <div class="table-wrapper" id="tableWrapper">
         <table id="dataTable"></table>
-        <!-- ✅ ADD THIS LINE -->
         <div class="resize-line" id="resizeLine"></div>
     </div>
 
-<div class="pagination" id="pagination"></div>
+    <div id="paginationWrapper">
+        <div class="pagination" id="pagination"></div>
+    </div>
+
 </div>
 
 <script src="/static/js/preview.js"></script>

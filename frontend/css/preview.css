@@ -146,7 +146,7 @@
     text-overflow: ellipsis;
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     
-    /* ✅ CRITICAL: Set minimum and default widths */
+    /* Set minimum and default widths */
     min-width: 120px; /* Minimum 120px - ensures readability */
     width: auto;
 }
@@ -193,7 +193,7 @@
     position: absolute;
     top: 0;
     right: 0;
-    width: 8px; /* ✅ Wider for easier grabbing */
+    width: 8px;
     height: 100%;
     cursor: col-resize;
     background: transparent;
@@ -222,12 +222,12 @@
     color: #374151;
     z-index: 1;
     
-    /* ✅ Truncation with ellipsis */
+    /* Truncation with ellipsis */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     
-    /* ✅ CRITICAL: Match header minimum widths */
+    /* CRITICAL: Match header minimum widths */
     min-width: 120px;
     
     /* Make clickable */
@@ -548,4 +548,26 @@
     padding: 0 6px;
     color: #6b7280;
     font-weight: 500;
+}
+#loadingState {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+
+    display: none;          /* toggled via JS */
+    align-items: center;
+    justify-content: center;
+
+    text-align: center;
+    color: #9ca3af;
+    font-size: 16px;
+
+    z-index: 9999;
+}
+
+#paginationWrapper {
+    margin: 20px 0;
+    min-height: 48px; /* prevents layout jump */
 }

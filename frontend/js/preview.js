@@ -63,13 +63,15 @@ document.getElementById("pageSize").onchange = e => {
 
 /* ---------- LOADING STATE ---------- */
 function showLoading() {
-    document.getElementById("loadingState").style.display = "block";
+    document.getElementById("loadingState").style.display = "flex";
     document.getElementById("tableWrapper").style.display = "none";
+    document.getElementById("paginationWrapper").style.display = "none";
 }
 
 function hideLoading() {
     document.getElementById("loadingState").style.display = "none";
     document.getElementById("tableWrapper").style.display = "block";
+    document.getElementById("paginationWrapper").style.display = "block";
 }
 
 /* ---------- LOAD DATA ---------- */
