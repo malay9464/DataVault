@@ -39,9 +39,10 @@
                     <option value="csv">CSV</option>
                     <option value="excel">Excel</option>
                 </select>
-                <button id="exportBtn" onclick="exportData(exportFormat.value)">
-                    Export
-                </button>
+            <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
+                <span id="exportText">Export</span>
+                <span id="exportSpinner" class="spinner" style="display:none;"></span>
+            </button>
             </div>
 
             <button class="related-btn" onclick="openRelatedRecords()">

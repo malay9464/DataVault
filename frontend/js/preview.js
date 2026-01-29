@@ -47,8 +47,16 @@ async function loadFileMetadata() {
         if (!res.ok) return;
         
         const metadata = await res.json();
-        document.getElementById("fileName").textContent = metadata.filename;
-        document.getElementById("fileContext").style.display = "block";
+        const fileNameEl = document.getElementById("fileName");
+        const fileContextEl = document.getElementById("fileContext");
+
+        if (fileNameEl) {
+            fileNameEl.textContent = metadata.filename;
+        }
+
+        if (fileContextEl) {
+            fileContextEl.style.display = "block";
+        }
     } catch (err) {
         console.error("Error loading metadata:", err);
     }
@@ -302,14 +310,17 @@ function exportData(format) {
     const text = document.getElementById("exportText");
     const spinner = document.getElementById("exportSpinner");
 
-    btn.disabled = true;
-    spinner.style.display = "inline-block";
-    text.innerText = "Exporting...";
+    // --- UI: start loading ---
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = "inline-block";
+    if (text) text.innerText = "Exporting...";
 
     authFetch(`/export?upload_id=${uploadId}&format=${format}`)
-        .then(r => {
-            if (!r.ok) throw new Error("Export failed");
-            return r.blob();
+        .then(res => {
+            if (!res || !res.ok) {
+                throw new Error("Export failed");
+            }
+            return res.blob();
         })
         .then(blob => {
             const url = URL.createObjectURL(blob);
@@ -319,20 +330,25 @@ function exportData(format) {
                 format === "excel"
                     ? `cleaned_${uploadId}.xlsx`
                     : `cleaned_${uploadId}.csv`;
+            document.body.appendChild(a);
             a.click();
+            a.remove();
             URL.revokeObjectURL(url);
         })
-        .catch(() => {
+        .catch(err => {
+            console.error(err);
             alert("Export failed or session expired");
             localStorage.removeItem("access_token");
             window.location.href = "/static/login.html";
         })
         .finally(() => {
-            btn.disabled = false;
-            spinner.style.display = "none";
-            text.innerText = "Export";
+            // --- UI: restore ---
+            if (btn) btn.disabled = false;
+            if (spinner) spinner.style.display = "none";
+            if (text) text.innerText = "Export";
         });
 }
+
 
 /* ---------- RELATED RECORDS ---------- */
 function openRelatedRecords() {

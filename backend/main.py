@@ -101,12 +101,31 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         for c in df.columns
     ]
 
-    email_cols = [
-    c for c in df.columns
-    if any(k in c for k in ["email", "mail"])
-    ]
-    phone_cols = [c for c in df.columns if any(k in c for k in ["phone", "mobile", "contact"])]
-    name_cols  = [c for c in df.columns if "name" in c]
+    email_cols = []
+    for c in df.columns:
+        if c in ["email", "e_mail", "mail", "email_address"]:
+            email_cols = [c]  # Use exact match
+            break
+    if not email_cols:
+        email_cols = [c for c in df.columns if "email" in c or c == "mail"]
+    
+    # Phone: look for exact matches first (INCLUDING contact fields)
+    phone_cols = []
+    for c in df.columns:
+        if c in ["phone", "phone_no", "phone_number", "mobile", "mobile_no", "mobile_number", "contact", "contact_no", "contact_number"]:
+            phone_cols = [c]  # Use exact match
+            break
+    if not phone_cols:
+        phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c or "contact" in c]
+    
+    # Name: look for exact matches first
+    name_cols = []
+    for c in df.columns:
+        if c in ["name", "full_name", "fullname", "customer_name", "client_name"]:
+            name_cols = [c]
+            break
+    if not name_cols:
+        name_cols = [c for c in df.columns if "name" in c]
 
     def clean_email(v):
         if pd.isna(v): return None
@@ -120,6 +139,7 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(v): return None
         return str(v).strip().lower()
 
+    # Create normalized columns
     df["email"] = (
         df[email_cols]
         .apply(lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1)
@@ -137,6 +157,16 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         .apply(lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1)
         if name_cols else None
     )
+
+    # ✅ Drop ONLY the columns that were used for canonical fields
+    columns_to_drop = set(email_cols + phone_cols + name_cols)
+    
+    # Don't drop the normalized columns if they already existed
+    columns_to_drop.discard("email")
+    columns_to_drop.discard("phone")
+    columns_to_drop.discard("name")
+    
+    df = df.drop(columns=list(columns_to_drop))
 
     return df
 
@@ -448,12 +478,25 @@ def preview_data(
     if not rows:
         return {"columns": [], "rows": [], "total_records": total}
 
+    # Define which columns to exclude (original/raw columns)
+    # Adjust this list based on your actual column naming pattern
+    excluded_prefixes = ["original_", "raw_"]  # Add any prefixes you use for original columns
+    
+    # Get all columns from first row
+    all_columns = list(rows[0].row_data.keys())
+    
+    # Filter out original columns - keep only normalized ones
+    normalized_columns = [
+        col for col in all_columns 
+        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
+    ]
+
     return {
-        "columns": list(rows[0].row_data.keys()),
+        "columns": normalized_columns,
         "rows": [
             {
                 "id": r.id,
-                "values": list(r.row_data.values())
+                "values": [r.row_data.get(col) for col in normalized_columns]
             }
             for r in rows
         ],
