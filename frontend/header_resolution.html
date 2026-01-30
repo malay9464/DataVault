@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resolve Headers - Data Vault</title>
+    <link rel="stylesheet" href="/static/css/upload.css">
+    <style>
+        .header-resolution-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+
+        .column-list {
+            display: grid;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .column-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+            background: #f9f9f9;
+        }
+
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .column-index {
+            font-weight: bold;
+            color: #555;
+        }
+
+        .original-name {
+            font-family: monospace;
+            background: #e0e0e0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #333;
+        }
+
+        .samples {
+            margin-top: 10px;
+            padding: 10px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 3px;
+        }
+
+        .samples-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .sample-values {
+            font-size: 13px;
+            color: #333;
+        }
+
+        .sample-values code {
+            background: #f0f0f0;
+            padding: 1px 4px;
+            border-radius: 2px;
+            margin-right: 8px;
+            display: inline-block;
+            margin-bottom: 4px;
+        }
+
+        .new-name-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .new-name-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .first-row-option {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .checkbox-container label {
+            cursor: pointer;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-resolution-container">
+        <h1>Resolve Headers</h1>
+        
+        <div id="alertContainer"></div>
+
+        <div id="headerContent"></div>
+
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="submitResolution()">
+                Submit & Continue Upload
+            </button>
+            <button class="btn btn-secondary" onclick="cancelResolution()">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const uploadId = new URLSearchParams(window.location.search).get('upload_id');
+        let headerInfo = null;
+        let caseType = null;
+
+        async function loadHeaders() {
+            try {
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`/upload/${uploadId}/headers`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load headers');
+                }
+
+                const data = await response.json();
+                headerInfo = data.header_info;
+                caseType = headerInfo.case_type;
+
+                renderHeaderUI();
+            } catch (error) {
+                showAlert('error', 'Failed to load header information: ' + error.message);
+            }
+        }
+
+        function renderHeaderUI() {
+            const alertContainer = document.getElementById('alertContainer');
+            const headerContent = document.getElementById('headerContent');
+
+            // Show appropriate alert
+            if (caseType === 'missing') {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-warning">
+                        <strong>Missing Headers Detected</strong>
+                        <p>Some columns have no headers or generic names like "unnamed_1". 
+                        Please assign meaningful names to the columns below.</p>
+                        <p><em>Note: You don't have to name all columns - only the ones you need.</em></p>
+                    </div>
+                `;
+            } else if (caseType === 'suspicious') {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-warning">
+                        <strong>Suspicious Headers Detected</strong>
+                        <p>The first row appears to contain data (emails, phones, or numbers) instead of header names.</p>
+                        <p>If the first row is actual data, check the box below and optionally assign header names.</p>
+                    </div>
+                `;
+            }
+
+            // Render column list
+            let columnsHTML = '<div class="column-list">';
+
+            headerInfo.samples.forEach((col, idx) => {
+                const isUnnamed = headerInfo.metadata.unnamed_indices?.includes(idx);
+                
+                columnsHTML += `
+                    <div class="column-item">
+                        <div class="column-header">
+                            <span class="column-index">Column ${idx + 1}</span>
+                            <span class="original-name">${col.column_name}</span>
+                        </div>
+                        
+                        <div class="samples">
+                            <div class="samples-label">Sample values:</div>
+                            <div class="sample-values">
+                                ${col.samples.map(s => `<code>${s}</code>`).join('')}
+                            </div>
+                        </div>
+
+                        <input 
+                            type="text" 
+                            class="new-name-input" 
+                            id="col_${idx}"
+                            placeholder="${isUnnamed ? 'Enter column name (required)' : 'Enter new name (optional)'}"
+                        >
+                    </div>
+                `;
+            });
+
+            columnsHTML += '</div>';
+
+            // Add "first row is data" option for suspicious case
+            if (caseType === 'suspicious') {
+                columnsHTML += `
+                    <div class="first-row-option">
+                        <div class="checkbox-container">
+                            <input type="checkbox" id="firstRowIsData">
+                            <label for="firstRowIsData">
+                                Treat first row as data (not headers)
+                            </label>
+                        </div>
+                    </div>
+                `;
+            }
+
+            headerContent.innerHTML = columnsHTML;
+        }
+
+        async function submitResolution() {
+            try {
+                const token = localStorage.getItem('access_token');
+
+                // Collect user mappings
+                const userMapping = {};
+                headerInfo.samples.forEach((col, idx) => {
+                    const input = document.getElementById(`col_${idx}`);
+                    if (input && input.value.trim()) {
+                        userMapping[idx] = input.value.trim();
+                    }
+                });
+
+                // Check if first row is data
+                const firstRowIsData = document.getElementById('firstRowIsData')?.checked || false;
+
+                // Send as JSON body instead of query params
+                const response = await fetch(`/upload/${uploadId}/resolve-headers`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_mapping: userMapping,
+                        first_row_is_data: firstRowIsData
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to resolve headers');
+                }
+
+                const result = await response.json();
+                
+                showAlert('success', 'Headers resolved successfully! Upload complete.');
+                
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+
+            } catch (error) {
+                showAlert('error', error.message);
+            }
+        }
+
+        function cancelResolution() {
+            if (confirm('Are you sure you want to cancel? The upload will be deleted.')) {
+                // TODO: Delete the pending upload
+                window.location.href = '/';
+            }
+        }
+
+        function showAlert(type, message) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alertClass = type === 'error' ? 'alert-warning' : 'alert-info';
+            
+            alertContainer.innerHTML = `
+                <div class="alert ${alertClass}">
+                    ${message}
+                </div>
+            `;
+        }
+
+        // Load headers on page load
+        loadHeaders();
+    </script>
+</body>
+</html>

@@ -2,6 +2,15 @@ from fastapi import (
     FastAPI, UploadFile, File, Query,
     HTTPException, Depends
 )
+from header_resolution import (
+    detect_header_case,
+    get_column_samples,
+    apply_user_headers,
+    normalize_header_name
+)
+import tempfile
+from pydantic import BaseModel
+from typing import Dict, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -19,12 +28,12 @@ from security import hash_password
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-# ---------------- CANONICAL FIELD KEYWORDS ----------------
+class HeaderResolutionRequest(BaseModel):
+    user_mapping: Dict[int, str] = {}
+    first_row_is_data: bool = False
 
 EMAIL_KEYWORDS = ["email", "e-mail", "mail"]
-
 PHONE_KEYWORDS = ["phone", "mobile", "contact", "cell"]
-
 NAME_FIELDS = {
     "name", "full_name", "customer_name", "client_name", "first_name", "fullname"
 }
@@ -187,7 +196,6 @@ def list_categories():
         for r in rows
     ]
 
-
 @app.post("/upload")
 async def upload_file(
     category_id: int = Query(...),
@@ -218,6 +226,74 @@ async def upload_file(
 
     upload_id = int(time.time())
 
+    # Read first chunk/sheet to detect headers
+    if name.endswith(".csv"):
+        try:
+            preview_df = pd.read_csv(io.BytesIO(contents), nrows=100, encoding="utf-8")
+        except UnicodeDecodeError:
+            preview_df = pd.read_csv(io.BytesIO(contents), nrows=100, encoding="latin1")
+    elif name.endswith(".xls") or name.endswith(".xlsx"):
+        preview_df = pd.read_excel(io.BytesIO(contents), nrows=100)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file")
+
+    # Detect header case
+    case_type, metadata = detect_header_case(preview_df)
+    
+    # Get column samples for user review
+    column_samples = get_column_samples(preview_df)
+    
+    # Store original headers
+    original_headers = {
+        'columns': [str(c) for c in preview_df.columns],
+        'case_type': case_type,
+        'metadata': metadata,
+        'samples': column_samples
+    }
+
+    # ========== CONDITIONAL FLOW ==========
+    
+    if case_type in ['missing', 'suspicious']:
+            # SAVE FILE TEMPORARILY for later processing
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, f"datavault_{upload_id}")
+            with open(temp_path, 'wb') as f:
+                f.write(contents)
+        
+        # PAUSE INGESTION - Store upload in pending state
+    with engine.connect() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO upload_log
+                (upload_id, category_id, filename, total_records, duplicate_records,
+                    failed_records, status, created_by_user_id, header_status,
+                    original_headers)
+                VALUES
+                (:uid, :cid, :f, 0, 0, 0, 'PENDING_HEADERS', :user_id, 'pending', :headers)
+            """),
+            {
+                "uid": upload_id,
+                "cid": category_id,
+                "f": original_filename,
+                "user_id": user["id"],
+                "headers": json.dumps(original_headers)
+            }
+        )
+        conn.commit()
+        
+        # Return pending status with header info
+        return {
+            "success": False,
+            "status": "pending_headers",
+            "upload_id": upload_id,
+            "case_type": case_type,
+            "message": "Headers need review" if case_type == 'missing' else "First row might be data",
+            "headers": original_headers
+        }
+    
+    # ========== CASE 1: VALID HEADERS - PROCEED NORMALLY ==========
+    
     total_records = 0
     duplicate_records = 0
     seen_hashes = set()
@@ -303,15 +379,22 @@ async def upload_file(
         conn.commit()
 
     # ---------- 4. INSERT UPLOAD LOG ----------
+    
+    # Store final headers for valid case
+    final_headers = {'columns': [str(c) for c in preview_df.columns]}
+    
     with engine.connect() as conn:
         conn.execute(
             text("""
                 INSERT INTO upload_log
                 (upload_id, category_id, filename,
                  total_records, duplicate_records,
-                 failed_records, status, created_by_user_id)
+                 failed_records, status, created_by_user_id,
+                 header_status, original_headers, final_headers, 
+                 header_resolution_type)
                 VALUES
-                (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id)
+                (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
+                 'no_issue', :orig, :final, 'original')
             """),
             {
                 "uid": upload_id,
@@ -319,13 +402,240 @@ async def upload_file(
                 "f": file.filename,
                 "t": total_records,
                 "d": duplicate_records,
-                "user_id": user["id"]
+                "user_id": user["id"],
+                "orig": json.dumps(original_headers),
+                "final": json.dumps(final_headers)
             }
         )
         conn.commit()
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
-    return {"success": True}
+    
+    return {
+        "success": True,
+        "upload_id": upload_id
+    }
+
+@app.get("/upload/{upload_id}/headers")
+def get_upload_headers(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get header information for an upload that needs resolution.
+    Returns original headers, samples, and metadata.
+    """
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT 
+                    filename,
+                    header_status,
+                    original_headers,
+                    status
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Upload not found")
+        
+        if result.header_status != 'pending':
+            raise HTTPException(
+                status_code=400, 
+                detail="Headers already resolved"
+            )
+        
+        return {
+            "upload_id": upload_id,
+            "filename": result.filename,
+            "header_info": result.original_headers
+        }
+
+@app.post("/upload/{upload_id}/resolve-headers")
+async def resolve_headers(
+    upload_id: int,
+    request: HeaderResolutionRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    User submits header corrections.
+    
+    Parameters:
+        request.user_mapping: {column_index: new_name} - Only for columns user wants to name
+        request.first_row_is_data: True if first row should be treated as data (Case 3)
+    
+    Flow:
+        1. Re-read the file
+        2. Apply user corrections
+        3. Continue with normal ingestion pipeline
+    """
+    
+    user_mapping = request.user_mapping
+    first_row_is_data = request.first_row_is_data
+    
+    # Fetch upload metadata
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT 
+                    filename,
+                    category_id,
+                    header_status,
+                    original_headers,
+                    created_by_user_id
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Upload not found")
+        
+        if result.header_status != 'pending':
+            raise HTTPException(status_code=400, detail="Headers already resolved")
+        
+        if result.created_by_user_id != user["id"] and user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Not authorized")
+    
+    filename = result.filename
+    category_id = result.category_id
+    original_headers_json = result.original_headers
+    
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f"datavault_{upload_id}")
+    
+    if not os.path.exists(temp_path):
+        raise HTTPException(
+            status_code=400,
+            detail="Original file not found. Please re-upload."
+        )
+    
+    # Read file
+    name = filename.lower()
+    
+    with open(temp_path, 'rb') as f:
+        contents = f.read()
+    
+    if name.endswith(".csv"):
+        try:
+            df = pd.read_csv(io.BytesIO(contents), encoding="utf-8")
+        except UnicodeDecodeError:
+            df = pd.read_csv(io.BytesIO(contents), encoding="latin1")
+    elif name.endswith(".xls") or name.endswith(".xlsx"):
+        df = pd.read_excel(io.BytesIO(contents))
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file")
+    
+    # Apply user header corrections
+    df = apply_user_headers(df, user_mapping, first_row_is_data)
+    
+    # Store final headers
+    final_headers = {
+        'columns': list(df.columns),
+        'user_mapping': user_mapping,
+        'first_row_was_data': first_row_is_data
+    }
+    
+    # Determine resolution type
+    if first_row_is_data:
+        resolution_type = 'first_row_corrected'
+    elif user_mapping:
+        resolution_type = 'user_assigned_partial'
+    else:
+        resolution_type = 'original'
+
+    total_records = 0
+    duplicate_records = 0
+    seen_hashes = set()
+
+    # Drop index
+    with engine.connect() as conn:
+        conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
+        conn.commit()
+
+    # Process data based on file type
+    if name.endswith(".csv"):
+        # For CSV, re-read in chunks with corrections applied
+        try:
+            reader = pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="utf-8")
+        except UnicodeDecodeError:
+            reader = pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
+        
+        chunk_num = 0
+        for chunk in reader:
+            # Apply same header corrections to each chunk
+            chunk = apply_user_headers(chunk, user_mapping, first_row_is_data and chunk_num == 0)
+            chunk_num += 1
+            
+            total_records += len(chunk)
+            chunk = normalize_dataframe(chunk)
+            chunk = chunk.drop_duplicates()
+            chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
+            chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
+            seen_hashes.update(chunk["__hash"])
+            chunk = chunk.drop(columns=["__hash"])
+            copy_cleaned_data(engine, upload_id, chunk)
+
+        duplicate_records = total_records - len(seen_hashes)
+    
+    else:
+        # Excel - already loaded in df
+        total_records = len(df)
+        df = normalize_dataframe(df)
+        df = df.drop_duplicates()
+        df["__hash"] = df.astype(str).agg("|".join, axis=1)
+        df = df.drop_duplicates(subset="__hash")
+        duplicate_records = total_records - len(df)
+        df = df.drop(columns=["__hash"])
+        copy_cleaned_data(engine, upload_id, df)
+
+    with engine.connect() as conn:
+        conn.execute(text("CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)"))
+        conn.commit()
+
+    with engine.connect() as conn:
+        conn.execute(
+            text("""
+                UPDATE upload_log
+                SET 
+                    total_records = :t,
+                    duplicate_records = :d,
+                    failed_records = 0,
+                    status = 'SUCCESS',
+                    header_status = 'resolved',
+                    final_headers = :final,
+                    header_resolution_type = :res_type,
+                    first_row_is_data = :first_data
+                WHERE upload_id = :uid
+            """),
+            {
+                "uid": upload_id,
+                "t": total_records,
+                "d": duplicate_records,
+                "final": json.dumps(final_headers),
+                "res_type": resolution_type,
+                "first_data": first_row_is_data
+            }
+        )
+        conn.commit()
+
+    # Clean up temp file
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+    log_to_csv(filename, total_records, duplicate_records, 0, "SUCCESS")
+    
+    return {
+        "success": True,
+        "upload_id": upload_id,
+        "total_records": total_records,
+        "duplicate_records": duplicate_records,
+        "resolution_type": resolution_type
+    }
 
 # ---------------- UPLOAD LIST ----------------
 @app.get("/uploads")
@@ -1341,3 +1651,45 @@ def related_grouped_stats(
         "both_groups": both_groups,
         "both_records": both_records  # ✅ FIXED: Now includes this value
     }
+
+@app.get("/header_resolution.html")
+def serve_header_resolution():
+    return FileResponse(os.path.join("..", "frontend", "header_resolution.html"))
+
+@app.get("/upload/{upload_id}/header-metadata")
+def get_header_metadata(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get header resolution metadata for auditing.
+    Shows original headers, final headers, and resolution type.
+    """
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT 
+                    filename,
+                    original_headers,
+                    final_headers,
+                    header_resolution_type,
+                    first_row_is_data,
+                    header_status
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Upload not found")
+        
+        return {
+            "upload_id": upload_id,
+            "filename": result.filename,
+            "original_headers": result.original_headers,
+            "final_headers": result.final_headers,
+            "resolution_type": result.header_resolution_type,
+            "first_row_was_data": result.first_row_is_data,
+            "header_status": result.header_status
+        }

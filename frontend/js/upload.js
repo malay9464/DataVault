@@ -230,14 +230,32 @@ async function upload() {
             return;
         }
 
-        showToast("Upload successful", "success");
+        // ========== HANDLE RESPONSE ==========
+        const result = await res.json();
 
-        selectedFile = null;
-        fileInput.value = "";
-        fileName.innerText = "";
+        // Check if headers need resolution
+        if (result.success === false && result.status === 'pending_headers') {
+            // Headers need user review - redirect to resolution page
+            showToast("Headers need review. Redirecting...", "warn", 2000);
+            
+            setTimeout(() => {
+                window.location.href = `/header_resolution.html?upload_id=${result.upload_id}`;
+            }, 2000);
+            
+            return;
+        }
 
-        loadCategories();
-        loadUploads();
+        // Normal success case
+        if (result.success) {
+            showToast("Upload successful", "success");
+
+            selectedFile = null;
+            fileInput.value = "";
+            fileName.innerText = "";
+
+            loadCategories();
+            loadUploads();
+        }
 
     } catch (err) {
         console.error(err);
@@ -247,7 +265,6 @@ async function upload() {
         spinner.style.display = "none";
     }
 }
-
 
 function openAddUserModal() {
     document.getElementById("addUserModal").style.display = "flex";

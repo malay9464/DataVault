@@ -315,7 +315,8 @@
 .group-table-scroll th {
     position: sticky;
     top: 0;
-    background: #f3f4f6;
+    background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
     font-weight: 600;
     padding: 10px 12px;
     white-space: nowrap;
