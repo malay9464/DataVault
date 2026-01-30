@@ -224,7 +224,7 @@ async def upload_file(
             detail="File with the same name already exists"
         )
 
-    upload_id = int(time.time())
+    upload_id = int(time.time() * 1000000)
 
     # Read first chunk/sheet to detect headers
     if name.endswith(".csv"):
@@ -454,6 +454,8 @@ def get_upload_headers(
             "header_info": result.original_headers
         }
 
+# REPLACE THE ENTIRE /upload/{upload_id}/resolve-headers ENDPOINT WITH THIS:
+
 @app.post("/upload/{upload_id}/resolve-headers")
 async def resolve_headers(
     upload_id: int,
@@ -468,7 +470,7 @@ async def resolve_headers(
         request.first_row_is_data: True if first row should be treated as data (Case 3)
     
     Flow:
-        1. Re-read the file
+        1. Re-read the file WITH CORRECT HEADER PARAMETER
         2. Apply user corrections
         3. Continue with normal ingestion pipeline
     """
@@ -520,22 +522,37 @@ async def resolve_headers(
     with open(temp_path, 'rb') as f:
         contents = f.read()
     
+    # ============ CRITICAL FIX: Determine header parameter ============
+    # If first_row_is_data, we must read with header=None to avoid consuming the first row
+    header_param = None if first_row_is_data else 0
+    
+    # Build the final column mapping
+    # We need to know total number of columns first
     if name.endswith(".csv"):
         try:
-            df = pd.read_csv(io.BytesIO(contents), encoding="utf-8")
+            sample_df = pd.read_csv(io.BytesIO(contents), nrows=1, encoding="utf-8", header=header_param)
         except UnicodeDecodeError:
-            df = pd.read_csv(io.BytesIO(contents), encoding="latin1")
+            sample_df = pd.read_csv(io.BytesIO(contents), nrows=1, encoding="latin1", header=header_param)
     elif name.endswith(".xls") or name.endswith(".xlsx"):
-        df = pd.read_excel(io.BytesIO(contents))
+        sample_df = pd.read_excel(io.BytesIO(contents), nrows=1, header=header_param)
     else:
         raise HTTPException(status_code=400, detail="Unsupported file")
     
-    # Apply user header corrections
-    df = apply_user_headers(df, user_mapping, first_row_is_data)
+    total_columns = len(sample_df.columns)
+    
+    # Build final column names list
+    final_column_names = []
+    for idx in range(total_columns):
+        if idx in user_mapping and user_mapping[idx].strip():
+            # User provided a name
+            final_column_names.append(user_mapping[idx].strip().lower().replace(' ', '_'))
+        else:
+            # No user name - use system name
+            final_column_names.append(f'unnamed_{idx}')
     
     # Store final headers
     final_headers = {
-        'columns': list(df.columns),
+        'columns': final_column_names,
         'user_mapping': user_mapping,
         'first_row_was_data': first_row_is_data
     }
@@ -557,19 +574,28 @@ async def resolve_headers(
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
 
-    # Process data based on file type
+    # ============ PROCESS DATA WITH CORRECT HEADERS ============
     if name.endswith(".csv"):
-        # For CSV, re-read in chunks with corrections applied
+        # For CSV, re-read in chunks with CORRECT header parameter
         try:
-            reader = pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="utf-8")
+            reader = pd.read_csv(
+                io.BytesIO(contents), 
+                chunksize=100_000, 
+                encoding="utf-8",
+                header=header_param  # ✅ CRITICAL FIX
+            )
         except UnicodeDecodeError:
-            reader = pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
+            reader = pd.read_csv(
+                io.BytesIO(contents), 
+                chunksize=100_000, 
+                encoding="latin1",
+                header=header_param  # ✅ CRITICAL FIX
+            )
         
-        chunk_num = 0
         for chunk in reader:
-            # Apply same header corrections to each chunk
-            chunk = apply_user_headers(chunk, user_mapping, first_row_is_data and chunk_num == 0)
-            chunk_num += 1
+            # Apply final column names directly
+            # No need to call apply_user_headers since we already read with correct header param
+            chunk.columns = final_column_names
             
             total_records += len(chunk)
             chunk = normalize_dataframe(chunk)
@@ -583,7 +609,13 @@ async def resolve_headers(
         duplicate_records = total_records - len(seen_hashes)
     
     else:
-        # Excel - already loaded in df
+        # Excel - read with correct header parameter
+        if name.endswith(".xls") or name.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents), header=header_param)
+        
+        # Apply final column names directly
+        df.columns = final_column_names
+        
         total_records = len(df)
         df = normalize_dataframe(df)
         df = df.drop_duplicates()

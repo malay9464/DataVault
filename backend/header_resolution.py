@@ -77,7 +77,6 @@ def detect_header_case(df: pd.DataFrame) -> Tuple[str, Dict]:
     # Case 1: Valid headers
     return 'valid', {}
 
-
 def get_column_samples(df: pd.DataFrame, n_samples: int = 5) -> List[Dict]:
     """
     Get sample values for each column.
@@ -98,7 +97,6 @@ def get_column_samples(df: pd.DataFrame, n_samples: int = 5) -> List[Dict]:
     
     return samples
 
-
 def apply_user_headers(
     df: pd.DataFrame,
     user_mapping: Dict[int, str],
@@ -117,11 +115,18 @@ def apply_user_headers(
     """
     
     if treat_first_row_as_data:
-        # Convert first row to data, generate new headers
-        new_headers = [f'unnamed_{i}' for i in range(len(df.columns))]
-        first_row_dict = df.iloc[0].to_dict()
+        # CRITICAL FIX: Capture first row VALUES before column manipulation
+        # This prevents data values from leaking into column names
+        first_row_values = df.iloc[0].values.tolist()
         
+        # Generate system headers
+        new_headers = [f'unnamed_{i}' for i in range(len(df.columns))]
         df.columns = new_headers
+        
+        # Reconstruct first row dict with correct column names
+        first_row_dict = {new_headers[i]: first_row_values[i] for i in range(len(new_headers))}
+        
+        # Add first row back as data
         df = pd.concat([pd.DataFrame([first_row_dict]), df], ignore_index=True)
     
     # Apply user-provided names
@@ -136,7 +141,6 @@ def apply_user_headers(
     df.columns = new_columns
     
     return df
-
 
 def normalize_header_name(name: str) -> str:
     """
