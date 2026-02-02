@@ -287,8 +287,7 @@ function attachResizeHandlers() {
             startWidth = currentTh.offsetWidth;
 
             const wrapperRect = wrapper.getBoundingClientRect();
-            resizeLine.style.left =
-                (currentTh.offsetLeft + currentTh.offsetWidth) + 'px';
+            resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
             resizeLine.classList.add('active');
 
             document.body.style.cursor = 'col-resize';
@@ -314,8 +313,7 @@ function attachResizeHandlers() {
 
         // Update resize line position
         const wrapperRect = wrapper.getBoundingClientRect();
-        resizeLine.style.left =
-            (currentTh.offsetLeft + newWidth) + 'px';
+        resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
     });
 
     document.addEventListener('mouseup', () => {

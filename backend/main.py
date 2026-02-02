@@ -451,13 +451,16 @@ async def resolve_headers(
 ):
     """
     User submits header corrections.
-    NOW we create the DB record and complete ingestion.
+    
+    CRITICAL: Two-mode ingestion
+    - RAW mode: User resolved headers → NO normalization
+    - NORMALIZED mode: No user intervention → Apply normalization
     """
     
     user_mapping = request.user_mapping
     first_row_is_data = request.first_row_is_data
     
-    # ========== READ FROM TEMP STORAGE (NO DB LOOKUP) ==========
+    # ========== READ FROM TEMP STORAGE ==========
     temp_dir = tempfile.gettempdir()
     temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
     temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
@@ -484,15 +487,13 @@ async def resolve_headers(
     with open(temp_file_path, 'rb') as f:
         contents = f.read()
     
-    # ========== CONTINUE WITH PROCESSING ==========
+    # ========== PROCESS FILE ==========
     name = filename.lower()
     
-    # ============ CRITICAL FIX: Determine header parameter ============
-    # If first_row_is_data, we must read with header=None to avoid consuming the first row
+    # Determine header parameter
     header_param = None if first_row_is_data else 0
     
-    # Build the final column mapping
-    # We need to know total number of columns first
+    # Get total number of columns
     if name.endswith(".csv"):
         try:
             sample_df = pd.read_csv(io.BytesIO(contents), nrows=1, encoding="utf-8", header=header_param)
@@ -505,14 +506,12 @@ async def resolve_headers(
     
     total_columns = len(sample_df.columns)
     
-    # Build final column names list
+    # Build final column names
     final_column_names = []
     for idx in range(total_columns):
         if idx in user_mapping and user_mapping[idx].strip():
-            # User provided a name
             final_column_names.append(user_mapping[idx].strip().lower().replace(' ', '_'))
         else:
-            # No user name - use system name
             final_column_names.append(f'unnamed_{idx}')
     
     # Store final headers
@@ -522,14 +521,17 @@ async def resolve_headers(
         'first_row_was_data': first_row_is_data
     }
     
-    # Determine resolution type
-    if first_row_is_data:
-        resolution_type = 'first_row_corrected'
-    elif user_mapping:
-        resolution_type = 'user_assigned_partial'
+    # ========== CRITICAL: DETERMINE INGESTION MODE ==========
+    user_resolved = (len(user_mapping) > 0 or first_row_is_data)
+    
+    if user_resolved:
+        ingestion_mode = 'raw'
+        resolution_type = 'first_row_corrected' if first_row_is_data else 'user_assigned_partial'
     else:
+        ingestion_mode = 'normalized'
         resolution_type = 'original'
 
+    # Initialize counters
     total_records = 0
     duplicate_records = 0
     seen_hashes = set()
@@ -539,53 +541,71 @@ async def resolve_headers(
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
 
+    # ========== CSV PROCESSING ==========
     if name.endswith(".csv"):
-        # For CSV, re-read in chunks with CORRECT header parameter
         try:
             reader = pd.read_csv(
                 io.BytesIO(contents), 
                 chunksize=100_000, 
                 encoding="utf-8",
-                header=header_param  # ✅ CRITICAL FIX
+                header=header_param
             )
         except UnicodeDecodeError:
             reader = pd.read_csv(
                 io.BytesIO(contents), 
                 chunksize=100_000, 
                 encoding="latin1",
-                header=header_param  # ✅ CRITICAL FIX
+                header=header_param
             )
         
         for chunk in reader:
-            # Apply final column names directly
+            # Apply final column names
             chunk.columns = final_column_names
             
             total_records += len(chunk)
-            chunk = normalize_dataframe(chunk)
+            
+            # ========== MODE-BASED NORMALIZATION ==========
+            if ingestion_mode == 'normalized':
+                # NORMALIZED MODE: Apply auto-normalization
+                chunk = normalize_dataframe(chunk)
+            # else: RAW MODE - NO normalization, preserve ALL columns
+            
+            # Deduplication (works on current columns, whatever they are)
             chunk = chunk.drop_duplicates()
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
             seen_hashes.update(chunk["__hash"])
             chunk = chunk.drop(columns=["__hash"])
+            
             copy_cleaned_data(engine, upload_id, chunk)
 
         duplicate_records = total_records - len(seen_hashes)
     
+    # ========== EXCEL PROCESSING ==========
     else:
-        # Excel - read with correct header parameter
         if name.endswith(".xls") or name.endswith(".xlsx"):
             df = pd.read_excel(io.BytesIO(contents), header=header_param)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file")
         
-        # Apply final column names directly
+        # Apply final column names
         df.columns = final_column_names
         
         total_records = len(df)
-        df = normalize_dataframe(df)
+        
+        # ========== MODE-BASED NORMALIZATION ==========
+        if ingestion_mode == 'normalized':
+            # NORMALIZED MODE: Apply auto-normalization
+            df = normalize_dataframe(df)
+        # else: RAW MODE - NO normalization, preserve ALL columns
+        
+        # Deduplication (works on current columns, whatever they are)
         df = df.drop_duplicates()
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
         duplicate_records = total_records - len(df)
         df = df.drop(columns=["__hash"])
+        
         copy_cleaned_data(engine, upload_id, df)
 
     # Recreate index
@@ -593,7 +613,7 @@ async def resolve_headers(
         conn.execute(text("CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)"))
         conn.commit()
 
-    # ========== CREATE DB RECORD NOW (AFTER SUCCESSFUL INGESTION) ==========
+    # ========== CREATE DB RECORD ==========
     with engine.connect() as conn:
         conn.execute(
             text("""
@@ -627,7 +647,7 @@ async def resolve_headers(
         os.remove(temp_file_path)
         os.remove(temp_meta_path)
     except:
-        pass  # Already deleted or permission issue
+        pass
 
     log_to_csv(filename, total_records, duplicate_records, 0, "SUCCESS")
     
@@ -636,7 +656,8 @@ async def resolve_headers(
         "upload_id": upload_id,
         "total_records": total_records,
         "duplicate_records": duplicate_records,
-        "resolution_type": resolution_type
+        "resolution_type": resolution_type,
+        "ingestion_mode": ingestion_mode  # For debugging
     }
 
 # ---------------- UPLOAD LIST ----------------

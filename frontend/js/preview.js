@@ -180,9 +180,9 @@ function attachResizeHandlers() {
 
     let isResizing = false;
     let currentTh = null;
-    let currentColumn = null;
     let startX = 0;
     let startWidth = 0;
+    let wrapperRect = null;
 
     handles.forEach(handle => {
         handle.addEventListener('mousedown', (e) => {
@@ -191,13 +191,14 @@ function attachResizeHandlers() {
 
             isResizing = true;
             currentTh = handle.closest('th');
-            currentColumn = currentTh.dataset.column;
             startX = e.clientX;
             startWidth = currentTh.offsetWidth;
+            wrapperRect = wrapper.getBoundingClientRect();
 
-            const wrapperRect = wrapper.getBoundingClientRect();
+            // Align resize line with column edge
+            const thRect = currentTh.getBoundingClientRect();
             resizeLine.style.left =
-              (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+                (thRect.right - wrapperRect.left + wrapper.scrollLeft) + 'px';
 
             resizeLine.classList.add('active');
             document.body.style.cursor = 'col-resize';
@@ -211,26 +212,24 @@ function attachResizeHandlers() {
         const diff = e.clientX - startX;
         const newWidth = Math.max(120, startWidth + diff);
 
+        // Apply width to header
         currentTh.style.width = newWidth + 'px';
         currentTh.style.minWidth = newWidth + 'px';
         currentTh.style.maxWidth = newWidth + 'px';
 
-        const columnIndex = parseInt(currentTh.dataset.index);
-        const cells = table.querySelectorAll(
-          `tbody tr td:nth-child(${columnIndex + 1})`
-        );
+        // Apply width to body cells
+        const columnIndex = currentTh.cellIndex + 1;
+        table.querySelectorAll(`tbody tr td:nth-child(${columnIndex})`)
+            .forEach(td => {
+                td.style.width = newWidth + 'px';
+                td.style.minWidth = newWidth + 'px';
+                td.style.maxWidth = newWidth + 'px';
+            });
 
-        cells.forEach(cell => {
-            cell.style.width = newWidth + 'px';
-            cell.style.minWidth = newWidth + 'px';
-            cell.style.maxWidth = newWidth + 'px';
-        });
-
-        columnWidths[currentColumn] = newWidth;
-
-        const wrapperRect = wrapper.getBoundingClientRect();
+        // ✅ FIX: anchor resize line to column edge, not mouse
+        const thRect = currentTh.getBoundingClientRect();
         resizeLine.style.left =
-          (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+            (thRect.right - wrapperRect.left + wrapper.scrollLeft) + 'px';
     });
 
     document.addEventListener('mouseup', () => {
