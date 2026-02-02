@@ -14,3 +14,5 @@ backend/logs/
 # SQL local scripts (optional)
 log_table.sql
 sql2.sql
+sql3.sql
+log_table.sql

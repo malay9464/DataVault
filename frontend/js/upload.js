@@ -3,14 +3,15 @@ const token = localStorage.getItem("access_token");
 if (!token) {
     window.location.href = "/static/login.html";
 }
+const urlParams = new URLSearchParams(window.location.search);
 
+let page = parseInt(urlParams.get("page")) || 1;
+let currentFilter = urlParams.get("filter") || "all";
 let currentUser = null;
 let selectedFile = null;
-let currentFilter = "all";
 let categoriesCache = [];
 let allUploads = [];
 let filteredUploads = [];
-let page = 1;
 const PAGE_SIZE = 10;
 
 const fileInput = document.getElementById("fileInput"); // Assuming ID based on usage
@@ -185,6 +186,7 @@ async function loadCategories() {
 function applyFilter(type, el) {
     currentFilter = type;
     page = 1;
+    updateURL();
     searchInput.value = "";
                
     document.querySelectorAll(".category")
@@ -419,7 +421,7 @@ function renderTable() {
             <td>
                 <div class="action-group">
                     <button class="btn-view"
-                        onclick="location.href='/preview.html?upload_id=${r.upload_id}'">
+                        onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">
                         View
                     </button>
 
@@ -447,6 +449,7 @@ function renderPagination(totalPages) {
     prev.disabled = page === 1;
     prev.onclick = () => {
         page--;
+        updaateURL();
         renderTable();
     };
     pagination.appendChild(prev);
@@ -467,6 +470,7 @@ function renderPagination(totalPages) {
     next.disabled = page === totalPages;
     next.onclick = () => {
         page++;
+        updateURL();
         renderTable();
     };
     pagination.appendChild(next);
@@ -478,6 +482,7 @@ function addPage(n) {
     if (n === page) b.classList.add("active");
     b.onclick = () => {
         page = n;
+        updateURL();
         renderTable();
     };
     pagination.appendChild(b);
@@ -541,4 +546,13 @@ async function resetPasswordPrompt(userId, email) {
     }
 
     alert("Password reset successfully");
+}
+
+function updateURL() {
+    const params = new URLSearchParams();
+
+    params.set("page", page);
+    params.set("filter", currentFilter);
+
+    history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
 }
