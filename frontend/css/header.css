@@ -252,6 +252,11 @@
     font-family: system-ui, -apple-system, sans-serif;
     transition: all 0.2s;
     background: white;
+    box-sizing: border-box;
+}
+
+#headerTable td {
+    box-sizing: border-box;
 }
 
 #headerTable .input-row input:focus {
@@ -363,14 +368,14 @@
 }
 
 .resize-line {
-    position: fixed;
+    position: absolute;
     top: 0;
     bottom: 0;
     width: 2px;
     background: #3b82f6;
     box-shadow: 0 0 4px rgba(59, 130, 246, 0.5);
     pointer-events: none;
-    z-index: 9999;
+    z-index: 50;
     display: none;
 }
 

@@ -73,9 +73,6 @@ async function loadHeaders() {
     }
 }
 
-/* ===============================
-   RENDER UI
-   =============================== */
 function renderHeaderUI() {
     const alertContainer = document.getElementById('alertContainer');
     const headerContent = document.getElementById('headerContent');
@@ -121,7 +118,17 @@ function renderHeaderUI() {
     `;
 
     // Build table HTML
-    let tableHTML = instructionBanner + '<div class="header-table-wrapper"><table id="headerTable">';
+    let tableHTML = instructionBanner + `
+    <div class="header-table-wrapper">
+    <table id="headerTable">
+    <colgroup>
+        <col style="width:50px">
+        ${headerInfo.samples.map((col, idx) => {
+            const w = columnWidths[idx] || getDefaultWidth(col.column_name);
+            return `<col style="width:${w}px">`;
+        }).join('')}
+    </colgroup>
+    `;
 
     // Column count
     const columnCount = headerInfo.samples.length;
@@ -132,16 +139,14 @@ function renderHeaderUI() {
     tableHTML += '<th style="width: 50px; min-width: 50px;">#</th>';
     
     headerInfo.samples.forEach((col, idx) => {
-        const width = columnWidths[idx] || getDefaultWidth(col.column_name);
         tableHTML += `
-            <th style="width: ${width}px; min-width: ${width}px; max-width: ${width}px;" 
-                data-column="${col.column_name}" 
-                data-index="${idx}">
+            <th data-column="${col.column_name}" data-index="${idx}">
                 Col ${idx + 1}
                 <div class="resize-handle"></div>
             </th>
         `;
     });
+
     tableHTML += '</tr></thead>';
 
     tableHTML += '<tbody>';
@@ -282,7 +287,8 @@ function attachResizeHandlers() {
             startWidth = currentTh.offsetWidth;
 
             const wrapperRect = wrapper.getBoundingClientRect();
-            resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+            resizeLine.style.left =
+                (currentTh.offsetLeft + currentTh.offsetWidth) + 'px';
             resizeLine.classList.add('active');
 
             document.body.style.cursor = 'col-resize';
@@ -297,30 +303,19 @@ function attachResizeHandlers() {
         const newWidth = Math.max(120, startWidth + diff);
 
         // Update header column
-        currentTh.style.width = newWidth + 'px';
-        currentTh.style.minWidth = newWidth + 'px';
-        currentTh.style.maxWidth = newWidth + 'px';
+        const col = table.querySelectorAll('col')[currentIndex + 1];
+        col.style.width = newWidth + 'px';
 
         // Update all cells in this column
         const columnIndex = currentIndex + 1; // +1 because first column is row number
-        const allCells = table.querySelectorAll(`
-            tr.detected-row td:nth-child(${columnIndex + 1}),
-            tr.input-row td:nth-child(${columnIndex + 1}),
-            tr.data-row td:nth-child(${columnIndex + 1})
-        `);
-
-        allCells.forEach(cell => {
-            cell.style.width = newWidth + 'px';
-            cell.style.minWidth = newWidth + 'px';
-            cell.style.maxWidth = newWidth + 'px';
-        });
 
         // Store width
         columnWidths[currentIndex] = newWidth;
 
         // Update resize line position
         const wrapperRect = wrapper.getBoundingClientRect();
-        resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
+        resizeLine.style.left =
+            (currentTh.offsetLeft + newWidth) + 'px';
     });
 
     document.addEventListener('mouseup', () => {

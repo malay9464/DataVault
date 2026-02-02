@@ -539,7 +539,6 @@ async def resolve_headers(
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
 
-    # ============ PROCESS DATA WITH CORRECT HEADERS ============
     if name.endswith(".csv"):
         # For CSV, re-read in chunks with CORRECT header parameter
         try:
