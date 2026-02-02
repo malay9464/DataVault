@@ -370,8 +370,8 @@
     top: 0;
     bottom: 0;
     width: 3px;                 /* thicker */
-    background: #ef4444;        /* 🔴 RED for debugging */
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
+    background: #4022ea;        /* 🔴 RED for debugging */
+    box-shadow: 0 0 6px rgb(255, 106, 0);
     pointer-events: none;
     z-index: 9999;              /* ABOVE EVERYTHING */
     display: none;
