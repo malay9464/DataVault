@@ -2,7 +2,7 @@ from fastapi import (
     FastAPI, UploadFile, File, Query,
     HTTPException, Depends
 )
-from header_resolution import (
+from header import (
     detect_header_case,
     get_column_samples,
     apply_user_headers,
@@ -254,35 +254,30 @@ async def upload_file(
     # ========== CONDITIONAL FLOW ==========
     
     if case_type in ['missing', 'suspicious']:
-            # SAVE FILE TEMPORARILY for later processing
-            import tempfile
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, f"datavault_{upload_id}")
-            with open(temp_path, 'wb') as f:
-                f.write(contents)
+        # ========== TWO-PHASE COMMIT: NO DB RECORD YET ==========
         
-        # PAUSE INGESTION - Store upload in pending state
-    with engine.connect() as conn:
-        conn.execute(
-            text("""
-                INSERT INTO upload_log
-                (upload_id, category_id, filename, total_records, duplicate_records,
-                    failed_records, status, created_by_user_id, header_status,
-                    original_headers)
-                VALUES
-                (:uid, :cid, :f, 0, 0, 0, 'PENDING_HEADERS', :user_id, 'pending', :headers)
-            """),
-            {
-                "uid": upload_id,
-                "cid": category_id,
-                "f": original_filename,
-                "user_id": user["id"],
-                "headers": json.dumps(original_headers)
-            }
-        )
-        conn.commit()
+        # 1. Save file to temp storage
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
+        temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
         
-        # Return pending status with header info
+        with open(temp_file_path, 'wb') as f:
+            f.write(contents)
+        
+        # 2. Save metadata separately (NO DATABASE WRITE)
+        temp_metadata = {
+            'upload_id': upload_id,
+            'category_id': category_id,
+            'filename': original_filename,
+            'user_id': user["id"],
+            'created_at': time.time(),
+            'original_headers': original_headers
+        }
+        
+        with open(temp_meta_path, 'w') as f:
+            json.dump(temp_metadata, f)
+        
+        # 3. Return pending status WITHOUT creating DB record
         return {
             "success": False,
             "status": "pending_headers",
@@ -422,39 +417,31 @@ def get_upload_headers(
     user: dict = Depends(get_current_user)
 ):
     """
-    Get header information for an upload that needs resolution.
-    Returns original headers, samples, and metadata.
+    Get header information for a pending upload (NOT YET IN DATABASE).
+    Reads from temporary storage.
     """
-    with engine.begin() as conn:
-        result = conn.execute(
-            text("""
-                SELECT 
-                    filename,
-                    header_status,
-                    original_headers,
-                    status
-                FROM upload_log
-                WHERE upload_id = :uid
-            """),
-            {"uid": upload_id}
-        ).fetchone()
-        
-        if not result:
-            raise HTTPException(status_code=404, detail="Upload not found")
-        
-        if result.header_status != 'pending':
-            raise HTTPException(
-                status_code=400, 
-                detail="Headers already resolved"
-            )
-        
-        return {
-            "upload_id": upload_id,
-            "filename": result.filename,
-            "header_info": result.original_headers
-        }
-
-# REPLACE THE ENTIRE /upload/{upload_id}/resolve-headers ENDPOINT WITH THIS:
+    temp_dir = tempfile.gettempdir()
+    temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
+    
+    if not os.path.exists(temp_meta_path):
+        raise HTTPException(
+            status_code=404, 
+            detail="Upload session expired or not found. Please re-upload."
+        )
+    
+    # Read metadata from temp storage
+    with open(temp_meta_path, 'r') as f:
+        metadata = json.load(f)
+    
+    # Verify user ownership
+    if metadata['user_id'] != user["id"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return {
+        "upload_id": upload_id,
+        "filename": metadata['filename'],
+        "header_info": metadata['original_headers']
+    }
 
 @app.post("/upload/{upload_id}/resolve-headers")
 async def resolve_headers(
@@ -464,63 +451,41 @@ async def resolve_headers(
 ):
     """
     User submits header corrections.
-    
-    Parameters:
-        request.user_mapping: {column_index: new_name} - Only for columns user wants to name
-        request.first_row_is_data: True if first row should be treated as data (Case 3)
-    
-    Flow:
-        1. Re-read the file WITH CORRECT HEADER PARAMETER
-        2. Apply user corrections
-        3. Continue with normal ingestion pipeline
+    NOW we create the DB record and complete ingestion.
     """
     
     user_mapping = request.user_mapping
     first_row_is_data = request.first_row_is_data
     
-    # Fetch upload metadata
-    with engine.begin() as conn:
-        result = conn.execute(
-            text("""
-                SELECT 
-                    filename,
-                    category_id,
-                    header_status,
-                    original_headers,
-                    created_by_user_id
-                FROM upload_log
-                WHERE upload_id = :uid
-            """),
-            {"uid": upload_id}
-        ).fetchone()
-        
-        if not result:
-            raise HTTPException(status_code=404, detail="Upload not found")
-        
-        if result.header_status != 'pending':
-            raise HTTPException(status_code=400, detail="Headers already resolved")
-        
-        if result.created_by_user_id != user["id"] and user["role"] != "admin":
-            raise HTTPException(status_code=403, detail="Not authorized")
-    
-    filename = result.filename
-    category_id = result.category_id
-    original_headers_json = result.original_headers
-    
+    # ========== READ FROM TEMP STORAGE (NO DB LOOKUP) ==========
     temp_dir = tempfile.gettempdir()
-    temp_path = os.path.join(temp_dir, f"datavault_{upload_id}")
+    temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
+    temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
     
-    if not os.path.exists(temp_path):
+    if not os.path.exists(temp_file_path) or not os.path.exists(temp_meta_path):
         raise HTTPException(
             status_code=400,
-            detail="Original file not found. Please re-upload."
+            detail="Upload session expired. Please re-upload the file."
         )
     
-    # Read file
-    name = filename.lower()
+    # Read metadata
+    with open(temp_meta_path, 'r') as f:
+        metadata = json.load(f)
     
-    with open(temp_path, 'rb') as f:
+    # Verify user ownership
+    if metadata['user_id'] != user["id"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    filename = metadata['filename']
+    category_id = metadata['category_id']
+    original_headers_json = metadata['original_headers']
+    
+    # Read file contents
+    with open(temp_file_path, 'rb') as f:
         contents = f.read()
+    
+    # ========== CONTINUE WITH PROCESSING ==========
+    name = filename.lower()
     
     # ============ CRITICAL FIX: Determine header parameter ============
     # If first_row_is_data, we must read with header=None to avoid consuming the first row
@@ -594,7 +559,6 @@ async def resolve_headers(
         
         for chunk in reader:
             # Apply final column names directly
-            # No need to call apply_user_headers since we already read with correct header param
             chunk.columns = final_column_names
             
             total_records += len(chunk)
@@ -625,29 +589,33 @@ async def resolve_headers(
         df = df.drop(columns=["__hash"])
         copy_cleaned_data(engine, upload_id, df)
 
+    # Recreate index
     with engine.connect() as conn:
         conn.execute(text("CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)"))
         conn.commit()
 
+    # ========== CREATE DB RECORD NOW (AFTER SUCCESSFUL INGESTION) ==========
     with engine.connect() as conn:
         conn.execute(
             text("""
-                UPDATE upload_log
-                SET 
-                    total_records = :t,
-                    duplicate_records = :d,
-                    failed_records = 0,
-                    status = 'SUCCESS',
-                    header_status = 'resolved',
-                    final_headers = :final,
-                    header_resolution_type = :res_type,
-                    first_row_is_data = :first_data
-                WHERE upload_id = :uid
+                INSERT INTO upload_log
+                (upload_id, category_id, filename,
+                 total_records, duplicate_records,
+                 failed_records, status, created_by_user_id,
+                 header_status, original_headers, final_headers, 
+                 header_resolution_type, first_row_is_data)
+                VALUES
+                (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
+                 'resolved', :orig, :final, :res_type, :first_data)
             """),
             {
                 "uid": upload_id,
+                "cid": category_id,
+                "f": filename,
                 "t": total_records,
                 "d": duplicate_records,
+                "user_id": metadata['user_id'],
+                "orig": json.dumps(original_headers_json),
                 "final": json.dumps(final_headers),
                 "res_type": resolution_type,
                 "first_data": first_row_is_data
@@ -655,9 +623,12 @@ async def resolve_headers(
         )
         conn.commit()
 
-    # Clean up temp file
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
+    # Clean up temp files
+    try:
+        os.remove(temp_file_path)
+        os.remove(temp_meta_path)
+    except:
+        pass  # Already deleted or permission issue
 
     log_to_csv(filename, total_records, duplicate_records, 0, "SUCCESS")
     
@@ -753,6 +724,36 @@ def list_uploads(
         }
         for r in rows
     ]
+
+@app.post("/admin/cleanup-temp-uploads")
+def cleanup_abandoned_uploads(user: dict = Depends(admin_only)):
+    """
+    Delete temporary upload files older than 1 hour.
+    Should be called by a cron job or manually by admin.
+    """
+    import glob
+    
+    temp_dir = tempfile.gettempdir()
+    pattern = os.path.join(temp_dir, "datavault_*")
+    
+    deleted_count = 0
+    current_time = time.time()
+    max_age = 3600  # 1 hour in seconds
+    
+    for filepath in glob.glob(pattern):
+        try:
+            file_age = current_time - os.path.getmtime(filepath)
+            if file_age > max_age:
+                os.remove(filepath)
+                deleted_count += 1
+        except Exception as e:
+            print(f"Error deleting {filepath}: {e}")
+    
+    return {
+        "success": True,
+        "deleted_files": deleted_count,
+        "message": f"Cleaned up {deleted_count} abandoned upload files"
+    }
 
 @app.get("/my-uploads")
 def list_my_uploads(
@@ -1684,9 +1685,9 @@ def related_grouped_stats(
         "both_records": both_records  # ✅ FIXED: Now includes this value
     }
 
-@app.get("/header_resolution.html")
-def serve_header_resolution():
-    return FileResponse(os.path.join("..", "frontend", "header_resolution.html"))
+@app.get("/header.html")
+def serve_header():
+    return FileResponse(os.path.join("..", "frontend", "header.html"))
 
 @app.get("/upload/{upload_id}/header-metadata")
 def get_header_metadata(

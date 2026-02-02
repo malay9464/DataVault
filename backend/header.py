@@ -71,13 +71,13 @@ def detect_header_case(df: pd.DataFrame) -> Tuple[str, Dict]:
     if suspicion_score >= len(headers) * 0.3:
         return 'suspicious', {
             'suspicion_score': suspicion_score,
-            'reasons': suspicion_reasons[:5]  # Limit to 5 examples
+            'reasons': suspicion_reasons[:10]  # Limit to 5 examples
         }
     
     # Case 1: Valid headers
     return 'valid', {}
 
-def get_column_samples(df: pd.DataFrame, n_samples: int = 5) -> List[Dict]:
+def get_column_samples(df: pd.DataFrame, n_samples: int = 10) -> List[Dict]:
     """
     Get sample values for each column.
     

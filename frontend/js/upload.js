@@ -239,7 +239,7 @@ async function upload() {
             showToast("Headers need review. Redirecting...", "warn", 2000);
             
             setTimeout(() => {
-                window.location.href = `/header_resolution.html?upload_id=${result.upload_id}`;
+                window.location.href = `/header.html?upload_id=${result.upload_id}`;
             }, 2000);
             
             return;
