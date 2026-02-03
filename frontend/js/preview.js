@@ -41,6 +41,15 @@ function orderColumns(columns) {
     return [...priorityColumns, ...remainingColumns];
 }
 
+function highlightText(text, query) {
+    if (!query) return text;
+
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+
+    return text.replace(regex, '<mark>$1</mark>');
+}
+
 /* ---------- LOAD FILE METADATA ---------- */
 async function loadFileMetadata() {
     try {
@@ -289,13 +298,18 @@ function renderTable(data) {
         html += "<tr>";
         orderedColumns.forEach(col => {
             const value = rowData[col] ?? "";
-            const displayValue = value || "-";
+            let displayValue = value || "-";
             const isLong = String(value).length > 50;
             const isLast = col === orderedColumns[orderedColumns.length - 1];
             const w = columnWidths[col] || getDefaultWidth(col);
             
-            html += `<td  class="${isLong ? 'has-long-text' : ''}"
-                style="${isLast ? '' : `width:${w}px; min-width:${w}px; max-width:${w}px;`}" title="${value}">${displayValue}</td>`;
+        if (searchQuery && value) {
+            displayValue = highlightText(String(value), searchQuery);
+        }
+            html += `<td
+                class="${isLong ? 'has-long-text' : ''}"
+                style="${isLast ? '' : `width:${w}px; min-width:${w}px; max-width:${w}px;`}"
+                title="${value}">${displayValue}</td>`;
         });
         html += "</tr>";
     });
