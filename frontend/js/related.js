@@ -31,12 +31,12 @@ if (!uploadId) {
 }
 
 let currentPage = 1;
-let pageSize = 100;
+let pageSize = 20;
 let currentView = 'grouped';
 let isSearchMode = false;
 let currentFilter = 'all';
-let allLoadedGroups = [];
-let hasLoadedAllGroups = false;
+let currentSort = 'size-desc';
+let cachedGroups = [];
 
 /* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
 function orderColumns(columns) {
@@ -74,17 +74,16 @@ function isPhoneLike(col) {
     return /\b(phone|mobile|mob|telephone|tel|contact|contactno|mobile_no|phone_no|mobilephone)\b/.test(s);
 }
 
-/* ---------- ✅ LOADING STATE HELPERS ---------- */
 function showLoading() {
     document.getElementById("resultsContainer").innerHTML = `
-        <div style="text-align: center; padding: 60px; color: #9ca3af; font-size: 16px;">
-            ⏳ Loading data...
+        <div class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>Loading related records...</p>
         </div>
     `;
 }
 
 function hideLoading() {
-    // Loading indicator is replaced by actual content in render functions
 }
 
 // ---------------- LOAD STATISTICS ----------------
@@ -116,14 +115,20 @@ async function loadGroupedView() {
     
     try {
         const res = await authFetch(
-            `/related-grouped?upload_id=${uploadId}&page=1&page_size=20&match_type=${currentFilter}`
+            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=${pageSize}&match_type=${currentFilter}`
         );
         
         if (!res.ok) throw new Error("Failed to load grouped data");
         
         const data = await res.json();
         
-        renderGroupedView(data);
+        // Cache groups for client-side sorting
+        cachedGroups = data.groups;
+        
+        // Apply sorting
+        applySorting();
+        
+        renderGroupedView({ ...data, groups: cachedGroups });
         renderPagination(data.total_groups, data.page, data.page_size);
         hideLoading();
         
@@ -133,25 +138,24 @@ async function loadGroupedView() {
     }
 }
 
-async function loadGroupedViewWithPage() {
-    showLoading();
-    
-    try {
-        const res = await authFetch(
-            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=20&match_type=${currentFilter}`
-        );
-        
-        if (!res.ok) throw new Error("Failed to load grouped data");
-        
-        const data = await res.json();
-        renderGroupedView(data);
-        renderPagination(data.total_groups, data.page, data.page_size);
-        hideLoading();
-        
-    } catch (err) {
-        console.error(err);
-        alert("Failed to load grouped records");
+function applySorting() {
+    if (currentSort === 'size-desc') {
+        cachedGroups.sort((a, b) => b.record_count - a.record_count);
+    } else if (currentSort === 'size-asc') {
+        cachedGroups.sort((a, b) => a.record_count - b.record_count);
+    } else if (currentSort === 'alpha') {
+        cachedGroups.sort((a, b) => {
+            const idA = getPrimaryIdentifier(a).toLowerCase();
+            const idB = getPrimaryIdentifier(b).toLowerCase();
+            return idA.localeCompare(idB);
+        });
     }
+}
+
+function handleSortChange() {
+    currentSort = document.getElementById("sortBy").value;
+    applySorting();
+    renderGroupedView({ groups: cachedGroups, page: currentPage, page_size: pageSize, total_groups: cachedGroups.length });
 }
 
 // ---------------- FILTER FUNCTION ----------------
@@ -179,12 +183,52 @@ function getPrimaryIdentifier(group) {
     return parts.find(p => p.includes("@")) || parts[0];
 }
 
-// ---------------- ✅ RENDER GROUPED VIEW WITH COLUMN ORDERING ----------------
+function getMatchTypeIcon(type) {
+    if (type === 'email') return '📧';
+    if (type === 'phone') return '📱';
+    if (type === 'merged') return '🔗';
+    return '📊';
+}
+
+function getSeverityClass(count) {
+    if (count >= 10) return 'high';
+    if (count >= 5) return 'medium';
+    return 'low';
+}
+
+function getPreviewData(records) {
+    if (!records || records.length === 0) return null;
+    
+    const firstRecord = records[0].data;
+    const preview = {};
+    
+    // Get name
+    if (firstRecord.name) preview.name = firstRecord.name;
+    
+    // Get email
+    if (firstRecord.email) preview.email = firstRecord.email;
+    
+    // Get phone
+    if (firstRecord.phone) preview.phone = firstRecord.phone;
+    
+    const standardFields = ['name', 'email', 'phone'];
+    const otherFields = Object.keys(firstRecord).filter(k => !standardFields.includes(k));
+    
+    for (let field of otherFields) {
+        if (firstRecord[field] && firstRecord[field] !== '-' && firstRecord[field] !== null) {
+            preview.extra = { field, value: firstRecord[field] };
+            break;
+        }
+    }
+    
+    return preview;
+}
+
 function renderGroupedView(data) {
     const container = document.getElementById('resultsContainer');
     
     if (!data.groups || data.groups.length === 0) {
-        container.innerHTML = '<div class="no-results">No related records found</div>';
+        container.innerHTML = '<div class="no-results">No related records found for this filter</div>';
         return;
     }
     
@@ -193,15 +237,48 @@ function renderGroupedView(data) {
     data.groups.forEach((group, index) => {
         const groupId = `group-${data.page}-${index}`;
         const recordCount = group.records.length;
+        const matchIcon = getMatchTypeIcon(group.match_type);
+        const preview = getPreviewData(group.records);
         
         html += `
-            <div class="group-container">
-                <div class="group-header ${group.match_type}" onclick="toggleGroup('${groupId}')">
+            <div class="group-container ${group.match_type}">
+                <div class="group-header" onclick="toggleGroup('${groupId}')">
                     <div class="group-title">
                         <span class="expand-icon collapsed" id="expand-${groupId}">▼</span>
-                        <span>${getPrimaryIdentifier(group)}</span>
-                        <span class="group-badge">${recordCount} records</span>
+                        <span class="group-identifier">${getPrimaryIdentifier(group)}</span>
+                        <span class="match-type-badge ${group.match_type}">
+                            ${matchIcon} ${group.match_type}
+                        </span>
+                        <span class="group-badge">${recordCount}</span>
                     </div>
+                    ${preview ? `
+                        <div class="group-preview">
+                            ${preview.name ? `
+                                <div class="preview-field">
+                                    <span class="preview-label">Name:</span>
+                                    <span class="preview-value">${preview.name}</span>
+                                </div>
+                            ` : ''}
+                            ${preview.email ? `
+                                <div class="preview-field">
+                                    <span class="preview-label">Email:</span>
+                                    <span class="preview-value">${preview.email}</span>
+                                </div>
+                            ` : ''}
+                            ${preview.phone ? `
+                                <div class="preview-field">
+                                    <span class="preview-label">Phone:</span>
+                                    <span class="preview-value">${preview.phone}</span>
+                                </div>
+                            ` : ''}
+                            ${preview.extra ? `
+                                <div class="preview-field">
+                                    <span class="preview-label">${preview.extra.field}:</span>
+                                    <span class="preview-value">${preview.extra.value}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : ''}
                 </div>
                 <div class="group-records collapsed" id="records-${groupId}">
                     ${renderGroupTable(group.records)}
@@ -215,7 +292,6 @@ function renderGroupedView(data) {
         .forEach(scroll => attachGroupResizeHandlers(scroll));
 }
 
-// ---------------- TOGGLE GROUP ----------------
 function toggleGroup(groupId) {
     const recordsDiv = document.getElementById(`records-${groupId}`);
     const expandIcon = document.getElementById(`expand-${groupId}`);
@@ -226,14 +302,12 @@ function toggleGroup(groupId) {
 
 // ---------------- ✅ RENDER GROUP TABLE WITH COLUMN ORDERING ----------------
 function renderGroupTable(records) {
-    if (records.length === 0) return '<p>No records</p>';
+    if (records.length === 0) return '<p style="padding: 20px; text-align: center; color: #9ca3af;">No records</p>';
     
     const allColumns = records[0].data ? Object.keys(records[0].data) : [];
     
-    // ✅ Apply column ordering
     let columns = orderColumns(allColumns);
 
-    // Hide duplicate email/phone columns
     if (allColumns.map(c => c.toLowerCase()).includes('email')) {
         columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
     }
@@ -245,7 +319,7 @@ function renderGroupTable(records) {
         <div class="group-records">
             <div class="group-table-scroll">
                 <div class="resize-line"></div>
-                <table>
+                <table style="width: auto;">
     `;
 
     // Header
@@ -283,7 +357,6 @@ function renderGroupTable(records) {
     return html;
 }
 
-// ---------------- ✅ SEARCH WITH LOADING STATE ----------------
 async function searchRelated() {
     const searchValue = document.getElementById("searchValue").value.trim();
     
@@ -309,20 +382,28 @@ async function searchRelated() {
         
         if (data.records.length === 0) {
             container.innerHTML = '<div class="no-results">No records found for this search</div>';
+            document.getElementById("relatedPagination").innerHTML = '';
             return;
         }
         
         let html = `
-            <div style="padding: 15px; background: #fef3c7; border-radius: 6px; margin-bottom: 20px;">
-                <strong>Search Results:</strong> Found ${data.total_records} records matching "${searchValue}"
+            <div style="padding: 16px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #f59e0b;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px;">🔍</span>
+                    <div>
+                        <div style="font-weight: 700; color: #92400e; font-size: 15px;">Search Results</div>
+                        <div style="font-size: 13px; color: #78350f; margin-top: 2px;">
+                            Found <strong>${data.total_records}</strong> records matching "<strong>${searchValue}</strong>"
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
         
-        html += '<div class="group-records" style="max-height: none;"><table>';
+        html += '<div class="group-records" style="max-height: none;"><div class="group-table-scroll"><table>';
         
         const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
         
-        // ✅ Apply column ordering
         let columns = orderColumns(allColumns);
 
         if (allColumns.map(c => c.toLowerCase()).includes('email')) {
@@ -352,7 +433,7 @@ async function searchRelated() {
         });
         html += '</tbody>';
         
-        html += '</table></div>';
+        html += '</table></div></div>';
         
         container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
@@ -386,7 +467,7 @@ function renderPagination(total, page, size) {
     prevBtn.disabled = page === 1;
     prevBtn.onclick = () => {
         currentPage--;
-        loadGroupedViewWithPage();
+        loadGroupedView();
     };
     pagination.appendChild(prevBtn);
     
@@ -403,7 +484,6 @@ function renderPagination(total, page, size) {
         if (start > 2) {
             const ellipsis = document.createElement("span");
             ellipsis.innerText = "...";
-            ellipsis.style.padding = "0 10px";
             pagination.appendChild(ellipsis);
         }
     }
@@ -416,7 +496,6 @@ function renderPagination(total, page, size) {
         if (end < totalPages - 1) {
             const ellipsis = document.createElement("span");
             ellipsis.innerText = "...";
-            ellipsis.style.padding = "0 10px";
             pagination.appendChild(ellipsis);
         }
         addPageButton(totalPages, page);
@@ -427,7 +506,7 @@ function renderPagination(total, page, size) {
     nextBtn.disabled = page === totalPages;
     nextBtn.onclick = () => {
         currentPage++;
-        loadGroupedViewWithPage();
+        loadGroupedView();
     };
     pagination.appendChild(nextBtn);
 }
@@ -438,7 +517,7 @@ function addPageButton(pageNum, currentPageNum) {
     btn.className = pageNum === currentPageNum ? "active" : "";
     btn.onclick = () => {
         currentPage = pageNum;
-        loadGroupedViewWithPage();
+        loadGroupedView();
     };
     document.getElementById("relatedPagination").appendChild(btn);
 }
@@ -471,14 +550,12 @@ function attachGroupResizeHandlers(container) {
         const diff = e.clientX - startX;
         const newWidth = Math.max(140, startWidth + diff);
 
-        // 🔒 lock column width
         currentTh.style.width = newWidth + 'px';
         currentTh.style.minWidth = newWidth + 'px';
         currentTh.style.maxWidth = newWidth + 'px';
 
         const index = parseInt(currentTh.dataset.index, 10);
 
-        // 🔒 lock body cells
         table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)
             .forEach(td => {
                 td.style.width = newWidth + 'px';
@@ -486,7 +563,10 @@ function attachGroupResizeHandlers(container) {
                 td.style.maxWidth = newWidth + 'px';
             });
 
-        // 🔥 CRITICAL: prevent other columns from shrinking
+        if (!table.style.width || table.style.width === '100%') {
+            table.style.width = table.offsetWidth + 'px';
+        }
+        
         table.style.minWidth = table.scrollWidth + 'px';
 
         const scrollLeft = container.scrollLeft;
@@ -503,17 +583,15 @@ function attachGroupResizeHandlers(container) {
     });
 }
 
-
 // ---------------- HELPERS ----------------
 function goBack() {
     window.location.href = `/preview.html?upload_id=${uploadId}`;
 }
 
-// ---------------- ✅ INIT - Load metadata, stats, and data ----------------
 async function init() {
-    await loadFileMetadata(); // ✅ Load filename
-    await loadStats();        // Load statistics
-    await loadGroupedView();  // Load grouped data
+    await loadFileMetadata();
+    await loadStats();
+    await loadGroupedView();
 }
 
 init();

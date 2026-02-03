@@ -10,84 +10,102 @@
 <div class="container">
     <div class="card">
         
-        <!-- ✅ NEW: File Context Display -->
-        <div id="fileContext" style="
-            padding: 8px 12px;
-            background: #f9fafb;
-            border-left: 3px solid #10b981;
-            margin-bottom: 15px;
-            font-size: 14px;
-            color: #6b7280;
-            display: none;
-        ">
-            📄 <span id="fileName" style="color: #374151; font-weight: 500;">Loading...</span>
+        <!-- ✅ File Context with Better Styling -->
+        <div id="fileContext" class="file-context">
+            <div class="file-context-content">
+                <span class="file-icon">📄</span>
+                <div class="file-info">
+                    <span class="file-label">Analyzing duplicates in:</span>
+                    <span id="fileName" class="file-name">Loading...</span>
+                </div>
+            </div>
         </div>
 
-        <!-- Header -->
+        <!-- Header with Back Button -->
         <div class="header-row">
             <h2 class="page-title">🔗 Related Records</h2>
             <button class="btn-back" onclick="goBack()">← Back to Preview</button>
         </div>
 
-        <!-- Statistics Bar -->
-        <div class="stats-bar">
-            <div class="stat-item">
-                <span class="stat-label">Duplicate Emails</span>
-                <span class="stat-value" id="statDuplicateEmails">-</span>
+        <!-- ✅ IMPROVED: Compact Statistics Grid -->
+        <div class="stats-grid">
+            <div class="stat-card stat-email">
+                <div class="stat-icon">📧</div>
+                <div class="stat-content">
+                    <div class="stat-primary" id="statDuplicateEmails">-</div>
+                    <div class="stat-label">Email Groups</div>
+                    <div class="stat-secondary"><span id="statEmailRecords">-</span> records</div>
+                </div>
             </div>
-            <div class="stat-item">
-                <span class="stat-label">Email Records</span>
-                <span class="stat-value" id="statEmailRecords">-</span>
+            
+            <div class="stat-card stat-phone">
+                <div class="stat-icon">📱</div>
+                <div class="stat-content">
+                    <div class="stat-primary" id="statDuplicatePhones">-</div>
+                    <div class="stat-label">Phone Groups</div>
+                    <div class="stat-secondary"><span id="statPhoneRecords">-</span> records</div>
+                </div>
             </div>
-            <div class="stat-item">
-                <span class="stat-label">Duplicate Phones</span>
-                <span class="stat-value" id="statDuplicatePhones">-</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Phone Records</span>
-                <span class="stat-value" id="statPhoneRecords">-</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Both (Email + Phone)</span>
-                <span class="stat-value" id="statBoth">-</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Both Records</span>
-                <span class="stat-value" id="statBothRecords">-</span>
+            
+            <div class="stat-card stat-both">
+                <div class="stat-icon">🔗</div>
+                <div class="stat-content">
+                    <div class="stat-primary" id="statBoth">-</div>
+                    <div class="stat-label">Merged Groups</div>
+                    <div class="stat-secondary"><span id="statBothRecords">-</span> records</div>
+                </div>
             </div>
         </div>
 
-        <!-- Filter Panel -->
-        <div class="control-row">
-            <div class="filter-panel">
-                <button id="btnFilterAll" class="active" onclick="filterByType('all')">📊 All</button>
-                <button id="btnFilterEmail" onclick="filterByType('email')">📧 Email</button>
-                <button id="btnFilterPhone" onclick="filterByType('phone')">📱 Phone</button>
-                <button id="btnFilterBoth" onclick="filterByType('both')">🔗 Both</button>
-            </div>
-
-            <div class="search-panel">
+        <!-- ✅ IMPROVED: Search and Sort in One Row -->
+        <div class="control-bar">
+            <div class="search-section">
                 <input
                     type="text"
                     id="searchValue"
-                    placeholder="Search by email or phone..."
+                    class="search-input"
+                    placeholder="🔍 Search by email or phone..."
                     onkeypress="if(event.key==='Enter') searchRelated()"
                 >
-                <button class="btn-primary" onclick="searchRelated()">🔍 Search</button>
-                <button class="btn-secondary" onclick="resetSearch()">Reset</button>
+                <button class="btn-search" onclick="searchRelated()">Search</button>
+                <button class="btn-reset" onclick="resetSearch()">Reset</button>
+            </div>
+            
+            <div class="sort-section">
+                <label class="sort-label">Sort by:</label>
+                <select id="sortBy" class="sort-select" onchange="handleSortChange()">
+                    <option value="size-desc">Most Records First</option>
+                    <option value="size-asc">Fewest Records First</option>
+                    <option value="alpha">Alphabetical</option>
+                </select>
             </div>
         </div>
 
-        <hr style="
-            border: none;
-            border-top: 1px solid #e5e7eb;
-            margin: 15px 0;
-        ">
+        <!-- ✅ IMPROVED: Filter Tabs with Icons -->
+        <div class="filter-tabs">
+            <button id="btnFilterAll" class="filter-tab active" onclick="filterByType('all')">
+                <span class="filter-icon">📊</span>
+                <span class="filter-label">All Groups</span>
+            </button>
+            <button id="btnFilterEmail" class="filter-tab" onclick="filterByType('email')">
+                <span class="filter-icon">📧</span>
+                <span class="filter-label">Email Only</span>
+            </button>
+            <button id="btnFilterPhone" class="filter-tab" onclick="filterByType('phone')">
+                <span class="filter-icon">📱</span>
+                <span class="filter-label">Phone Only</span>
+            </button>
+            <button id="btnFilterBoth" class="filter-tab" onclick="filterByType('both')">
+                <span class="filter-icon">🔗</span>
+                <span class="filter-label">Both (Merged)</span>
+            </button>
+        </div>
 
         <!-- Results Container -->
         <div id="resultsContainer">
-            <div style="text-align: center; padding: 40px; color: #999;">
-                Loading...
+            <div class="loading-state">
+                <div class="loading-spinner"></div>
+                <p>Loading related records...</p>
             </div>
         </div>
 
