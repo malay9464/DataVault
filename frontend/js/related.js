@@ -83,9 +83,6 @@ function showLoading() {
     `;
 }
 
-function hideLoading() {
-}
-
 // ---------------- LOAD STATISTICS ----------------
 async function loadStats() {
     try {
@@ -130,7 +127,6 @@ async function loadGroupedView() {
         
         renderGroupedView({ ...data, groups: cachedGroups });
         renderPagination(data.total_groups, data.page, data.page_size);
-        hideLoading();
         
     } catch (err) {
         console.error(err);
@@ -153,6 +149,7 @@ function applySorting() {
 }
 
 function handleSortChange() {
+    if (isSearchMode) return;
     currentSort = document.getElementById("sortBy").value;
     applySorting();
     renderGroupedView({ groups: cachedGroups, page: currentPage, page_size: pageSize, total_groups: cachedGroups.length });
@@ -160,6 +157,7 @@ function handleSortChange() {
 
 // ---------------- FILTER FUNCTION ----------------
 function filterByType(filterType) {
+    if (isSearchMode) return;
     currentFilter = filterType;
     currentPage = 1;
     
@@ -316,7 +314,6 @@ function renderGroupTable(records) {
     }
     
     let html = `
-        <div class="group-records">
             <div class="group-table-scroll">
                 <div class="resize-line"></div>
                 <table style="width: auto;">
@@ -352,7 +349,6 @@ function renderGroupTable(records) {
     html += `
                 </table>
             </div>
-        </div>
     `;
     return html;
 }
@@ -437,7 +433,6 @@ async function searchRelated() {
         
         container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
-        hideLoading();
         
     } catch (err) {
         console.error(err);
@@ -530,6 +525,9 @@ function attachGroupResizeHandlers(container) {
     let startX = 0;
     let startWidth = 0;
     let currentTh = null;
+    let colIndex = -1;
+
+    const MIN_WIDTH = 140;
 
     handles.forEach(handle => {
         handle.addEventListener('mousedown', e => {
@@ -537,48 +535,55 @@ function attachGroupResizeHandlers(container) {
             e.stopPropagation();
 
             currentTh = handle.closest('th');
+            colIndex = parseInt(currentTh.dataset.index, 10);
+
             startX = e.clientX;
             startWidth = currentTh.offsetWidth;
 
             resizeLine.classList.add('active');
+
+            // place resize line exactly on column edge
+            const thRect = currentTh.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            resizeLine.style.left =
+                (thRect.right - containerRect.left + container.scrollLeft) + 'px';
         });
     });
 
     document.addEventListener('mousemove', e => {
         if (!currentTh) return;
 
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(140, startWidth + diff);
+        const delta = e.clientX - startX;
+        const newWidth = Math.max(MIN_WIDTH, startWidth + delta);
 
+        // apply width to header
         currentTh.style.width = newWidth + 'px';
         currentTh.style.minWidth = newWidth + 'px';
         currentTh.style.maxWidth = newWidth + 'px';
 
-        const index = parseInt(currentTh.dataset.index, 10);
-
-        table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)
+        // apply width to body cells
+        table
+            .querySelectorAll(`tbody tr td:nth-child(${colIndex + 1})`)
             .forEach(td => {
                 td.style.width = newWidth + 'px';
                 td.style.minWidth = newWidth + 'px';
                 td.style.maxWidth = newWidth + 'px';
             });
 
-        if (!table.style.width || table.style.width === '100%') {
-            table.style.width = table.offsetWidth + 'px';
-        }
-        
-        table.style.minWidth = table.scrollWidth + 'px';
-
-        const scrollLeft = container.scrollLeft;
+        // move resize line to actual column edge
+        const containerRect = container.getBoundingClientRect();
+        const thRect = currentTh.getBoundingClientRect();
 
         resizeLine.style.left =
-            (currentTh.offsetLeft + currentTh.offsetWidth - scrollLeft) + 'px';
+            (thRect.right - containerRect.left + container.scrollLeft) + 'px';
     });
 
     document.addEventListener('mouseup', () => {
         if (!currentTh) return;
 
         currentTh = null;
+        colIndex = -1;
         resizeLine.classList.remove('active');
     });
 }

@@ -233,15 +233,15 @@ async function loadData() {
 function getDefaultWidth(columnName) {
     const col = columnName.toLowerCase();
     
-    if (col.includes('email') || col.includes('mail')) return 220;
-    if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 140;
+    if (col.includes('email') || col.includes('mail')) return 180;
+    if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 100;
     if (col.includes('name')) return 180;
-    if (col.includes('address') || col.includes('resume') || col.includes('description')) return 250;
+    if (col.includes('address') || col.includes('resume') || col.includes('description')) return 200;
     if (col.includes('id') || col.includes('code')) return 120;
-    if (col.includes('city') || col.includes('state') || col.includes('zip')) return 130;
-    if (col.includes('date') || col.includes('time')) return 140;
-    if (col.includes('age') || col.includes('level')) return 100;
-    if (col.includes('gender') || col.includes('active')) return 100;
+    if (col.includes('city') || col.includes('state') || col.includes('zip')) return 100;
+    if (col.includes('date') || col.includes('time')) return 110;
+    if (col.includes('age') || col.includes('level')) return 80;
+    if (col.includes('gender') || col.includes('active')) return 80;
     
     return 150;
 }
