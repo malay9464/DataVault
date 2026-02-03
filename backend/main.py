@@ -817,6 +817,8 @@ def preview_data(
     upload_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
+    sort_column: str = Query(None),
+    sort_direction: str = Query("asc", regex="^(asc|desc)$"),
     user: dict = Depends(get_current_user)
 ):
     offset = (page - 1) * page_size
@@ -827,12 +829,19 @@ def preview_data(
             {"uid": upload_id}
         ).scalar()
 
+        # Build ORDER BY clause
+        order_by = "ORDER BY id"
+        if sort_column:
+            # Sanitize column name and build sort clause
+            direction = "DESC" if sort_direction == "desc" else "ASC"
+            order_by = f"ORDER BY row_data->>'{sort_column}' {direction}"
+
         rows = conn.execute(
-            text("""
+            text(f"""
                 SELECT id, row_data
                 FROM cleaned_data
                 WHERE upload_id=:uid
-                ORDER BY id
+                {order_by}
                 LIMIT :l OFFSET :o
             """),
             {"uid": upload_id, "l": page_size, "o": offset}
@@ -841,14 +850,8 @@ def preview_data(
     if not rows:
         return {"columns": [], "rows": [], "total_records": total}
 
-    # Define which columns to exclude (original/raw columns)
-    # Adjust this list based on your actual column naming pattern
-    excluded_prefixes = ["original_", "raw_"]  # Add any prefixes you use for original columns
-    
-    # Get all columns from first row
+    excluded_prefixes = ["original_", "raw_"]
     all_columns = list(rows[0].row_data.keys())
-    
-    # Filter out original columns - keep only normalized ones
     normalized_columns = [
         col for col in all_columns 
         if not any(col.startswith(prefix) for prefix in excluded_prefixes)
@@ -864,6 +867,88 @@ def preview_data(
             for r in rows
         ],
         "total_records": total
+    }
+
+@app.get("/search")
+def search_data(
+    upload_id: int,
+    query: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Server-side search across all columns.
+    Much faster than loading all data to client.
+    """
+    offset = (page - 1) * page_size
+    search_term = f"%{query.lower()}%"
+    
+    with engine.begin() as conn:
+        # Get columns from first row
+        first_row = conn.execute(
+            text("""
+                SELECT row_data
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                LIMIT 1
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+        
+        if not first_row:
+            return {"columns": [], "rows": [], "total_records": 0}
+        
+        columns = list(first_row.row_data.keys())
+        
+        # Build search condition for all columns
+        search_conditions = " OR ".join([
+            f"LOWER(CAST(row_data->>'{col}' AS TEXT)) LIKE :search"
+            for col in columns
+        ])
+        
+        # Count total matching records
+        total = conn.execute(
+            text(f"""
+                SELECT COUNT(*)
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                AND ({search_conditions})
+            """),
+            {"uid": upload_id, "search": search_term}
+        ).scalar()
+        
+        # Get paginated results
+        rows = conn.execute(
+            text(f"""
+                SELECT id, row_data
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                AND ({search_conditions})
+                ORDER BY id
+                LIMIT :limit OFFSET :offset
+            """),
+            {"uid": upload_id, "search": search_term, "limit": page_size, "offset": offset}
+        ).fetchall()
+    
+    # Filter columns (same as preview)
+    excluded_prefixes = ["original_", "raw_"]
+    normalized_columns = [
+        col for col in columns 
+        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
+    ]
+    
+    return {
+        "columns": normalized_columns,
+        "rows": [
+            {
+                "id": r.id,
+                "values": [r.row_data.get(col) for col in normalized_columns]
+            }
+            for r in rows
+        ],
+        "total_records": total,
+        "search_query": query
     }
 
 # ---------------- FILE METADATA ----------------

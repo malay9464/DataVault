@@ -1,21 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    
     <title>Preview Data</title>
-
-    <!-- CSS -->
     <link rel="stylesheet" href="/static/css/preview.css">
 </head>
-
 
 <body>
 <div class="container">
 
-    <!-- FILE BAR -->
-    <div class="file-bar">
-        <span class="file-indicator"></span>
-        <span id="fileName">Loading...</span>
+    <!-- ✅ NEW: File Context Banner -->
+    <div class="file-context" id="fileContext" style="display: none;">
+        <div class="file-context-content">
+            <span class="file-icon">📄</span>
+            <div class="file-info">
+                <span class="file-label">Viewing data from:</span>
+                <span id="fileName" class="file-name">Loading...</span>
+            </div>
+        </div>
     </div>
 
     <!-- HEADER BAR -->
@@ -23,44 +24,68 @@
         <h2>Uploaded Data</h2>
 
         <div class="header-actions">
-            <div class="rows-control">
-                <span>Show</span>
-                <select id="pageSize">
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                    <option value="200">200</option>
-                    <option value="500">500</option>
-                </select>
-                <span>rows</span>
-            </div>
-
-            <div class="export-control">
-                <select id="exportFormat">
-                    <option value="csv">CSV</option>
-                    <option value="excel">Excel</option>
-                </select>
-            <button id="exportBtn" onclick="exportData(document.getElementById('exportFormat').value)">
-                <span id="exportText">Export</span>
-                <span id="exportSpinner" class="spinner" style="display:none;"></span>
-            </button>
-            </div>
-
             <button class="related-btn" onclick="openRelatedRecords()">
                 🔗 View Related Records
             </button>
         </div>
     </div>
 
-        <!-- Loading State Container -->
-    <div id="loadingState">
-        ⏳ Loading data...
+    <!-- ✅ NEW: Search and Controls Bar -->
+    <div class="controls-bar">
+        <div class="search-section">
+            <input
+                type="text"
+                id="searchInput"
+                class="search-input"
+                placeholder="🔍 Search by name, email, phone..."
+                onkeypress="if(event.key==='Enter') performSearch()"
+            >
+            <button class="btn-search" onclick="performSearch()">Search</button>
+            <button class="btn-reset" onclick="resetSearch()" id="resetBtn" style="display: none;">Reset</button>
+        </div>
+
+        <div class="right-controls">
+            <div class="rows-control">
+                <span class="control-label">Rows:</span>
+                <select id="pageSize">
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
+            </div>
+
+            <div class="export-control">
+                <select id="exportFormat" class="export-select">
+                    <option value="csv">CSV</option>
+                    <option value="excel">Excel</option>
+                </select>
+                <button id="exportBtn" class="btn-export" onclick="exportData(document.getElementById('exportFormat').value)">
+                    <span id="exportText">Export</span>
+                    <span id="exportSpinner" class="spinner" style="display:none;"></span>
+                </button>
+            </div>
+        </div>
     </div>
 
+    <!-- ✅ NEW: Results Info Bar -->
+    <div class="results-info" id="resultsInfo" style="display: none;">
+        <span id="resultsText"></span>
+    </div>
+
+    <!-- Loading State Container -->
+    <div id="loadingState">
+        <div class="loading-spinner"></div>
+        <p>Loading data...</p>
+    </div>
+
+    <!-- Table Wrapper -->
     <div class="table-wrapper" id="tableWrapper">
         <table id="dataTable"></table>
         <div class="resize-line" id="resizeLine"></div>
     </div>
 
+    <!-- Pagination -->
     <div id="paginationWrapper">
         <div class="pagination" id="pagination"></div>
     </div>

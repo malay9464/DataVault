@@ -30,7 +30,8 @@ const uploadId = params.get("upload_id");
 let page = 1;
 let pageSize = 50;
 let totalRecords = 0;
-let columnWidths = {}; // Store custom column widths
+let columnWidths = {};
+let searchQuery = '';
 
 /* ---------- COLUMN ORDERING ---------- */
 function orderColumns(columns) {
@@ -66,7 +67,12 @@ async function loadFileMetadata() {
 document.getElementById("pageSize").onchange = e => {
     pageSize = parseInt(e.target.value);
     page = 1;
-    loadData();
+    
+    if (searchQuery) {
+        loadSearchResults();
+    } else {
+        loadData();
+    }
 };
 
 /* ---------- LOADING STATE ---------- */
@@ -82,14 +88,111 @@ function hideLoading() {
     document.getElementById("paginationWrapper").style.display = "block";
 }
 
+/* ---------- SEARCH FUNCTIONALITY ---------- */
+async function performSearch() {
+    const input = document.getElementById("searchInput").value.trim();
+    
+    if (!input) {
+        alert("Please enter a search term");
+        return;
+    }
+    
+    searchQuery = input;
+    page = 1;
+    
+    // Show reset button
+    document.getElementById("resetBtn").style.display = "inline-block";
+    
+    // Load search results from server
+    await loadSearchResults();
+}
+
+function resetSearch() {
+    searchQuery = '';
+    sortColumn = null;
+    sortDirection = 'asc';
+    document.getElementById("searchInput").value = '';
+    document.getElementById("resetBtn").style.display = "none";
+    document.getElementById("resultsInfo").style.display = "none";
+    page = 1;
+    
+    // Reload normal data
+    loadData();
+}
+
+async function loadSearchResults() {
+    showLoading();
+    
+    try {
+        const res = await authFetch(
+            `/search?upload_id=${uploadId}&query=${encodeURIComponent(searchQuery)}&page=${page}&page_size=${pageSize}`
+        );
+
+        if (!res.ok) {
+            alert("Search failed");
+            return;
+        }
+
+        const data = await res.json();
+        const searchTotal = data.total_records;
+        
+        // Calculate total pages for search results
+        const totalPages = Math.ceil(searchTotal / pageSize);
+        
+        // Show results info
+        const resultsInfo = document.getElementById("resultsInfo");
+        const resultsText = document.getElementById("resultsText");
+        
+        resultsInfo.style.display = "block";
+        const start = (page - 1) * pageSize + 1;
+        const end = Math.min(page * pageSize, searchTotal);
+        resultsText.innerHTML = `
+            <strong>Search Results:</strong> Found ${searchTotal.toLocaleString()} records matching "${searchQuery}"
+            ${searchTotal > 0 ? `(showing ${start}-${end})` : ''}
+        `;
+        
+        // Render table and pagination
+        renderTable({ columns: data.columns, rows: data.rows });
+        renderPagination(totalPages);
+        
+    } catch (err) {
+        console.error("Search error:", err);
+        alert("Search failed. Please try again.");
+    } finally {
+        hideLoading();
+    }
+}
+
+let sortColumn = null;
+let sortDirection = 'asc';
+
+function sortByColumn(columnName) {
+    
+    // Toggle sort direction if clicking same column
+    if (sortColumn === columnName) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn = columnName;
+        sortDirection = 'asc';
+    }
+    
+    page = 1;
+    loadData();
+}
+
 /* ---------- LOAD DATA ---------- */
 async function loadData() {
     showLoading();
     
     try {
-        const res = await authFetch(
-            `/preview?upload_id=${uploadId}&page=${page}&page_size=${pageSize}`
-        );
+        let url = `/preview?upload_id=${uploadId}&page=${page}&page_size=${pageSize}`;
+        
+        // Add sorting parameters if active
+        if (sortColumn) {
+            url += `&sort_column=${encodeURIComponent(sortColumn)}&sort_direction=${sortDirection}`;
+        }
+        
+        const res = await authFetch(url);
 
         if (!res.ok) {
             alert("Unauthorized or data not found");
@@ -98,9 +201,20 @@ async function loadData() {
 
         const data = await res.json();
         totalRecords = data.total_records;
-
-        renderTable(data);
-        renderPagination(Math.ceil(totalRecords / pageSize));
+        
+        // Calculate total pages
+        const totalPages = Math.ceil(totalRecords / pageSize);
+        
+        // Render table and pagination
+        renderTable({ columns: data.columns, rows: data.rows });
+        renderPagination(totalPages);
+        
+        // Hide results info when not searching
+        document.getElementById("resultsInfo").style.display = "none";
+        
+    } catch (err) {
+        console.error("Error loading data:", err);
+        alert("Failed to load data");
     } finally {
         hideLoading();
     }
@@ -120,7 +234,7 @@ function getDefaultWidth(columnName) {
     if (col.includes('age') || col.includes('level')) return 100;
     if (col.includes('gender') || col.includes('active')) return 100;
     
-    return 150; // Default
+    return 150;
 }
 
 /* ---------- RENDER TABLE ---------- */
@@ -129,20 +243,36 @@ function renderTable(data) {
     table.innerHTML = "";
 
     if (!data.rows || data.rows.length === 0) {
-        table.innerHTML = "<tr><td>No data</td></tr>";
+        table.innerHTML = "<tr><td colspan='100' style='text-align: center; padding: 40px; color: #9ca3af;'>No data found</td></tr>";
         return;
     }
 
     const orderedColumns = orderColumns(data.columns);
 
-    // Build header with resize handles
+    // Build header with resize handles and sort icons
     let html = "<thead><tr>";
     orderedColumns.forEach((col, index) => {
         const width = columnWidths[col] || getDefaultWidth(col);
+        const isSorted = sortColumn === col;
+        const sortIcon = isSorted ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅';
+        const isLast = index === orderedColumns.length - 1;
+        
         html += `
-            <th style="width: ${width}px; min-width: ${width}px; max-width: ${width}px;" data-column="${col}" data-index="${index}">
-                ${col}
-                <div class="resize-handle"></div>
+            <th style="
+                    width: ${width}px;
+                    min-width: ${width}px;
+                    ${isLast ? '' : `max-width: ${width}px;`}"
+                data-column="${col}" 
+                data-index="${index}"
+                class="${isSorted ? 'sorted' : ''}">
+                <div class="th-content">
+                    <span class="th-label"
+                        ${searchQuery ? '' : `onclick="sortByColumn('${col}')"`}>
+                        ${col}
+                    </span>
+                    ${searchQuery ? '' : `<span class="sort-icon">${sortIcon}</span>`}
+                    <div class="resize-handle"></div>
+                </div>
             </th>
         `;
     });
@@ -159,7 +289,13 @@ function renderTable(data) {
         html += "<tr>";
         orderedColumns.forEach(col => {
             const value = rowData[col] ?? "";
-            html += `<td>${value || "-"}</td>`;
+            const displayValue = value || "-";
+            const isLong = String(value).length > 50;
+            const isLast = col === orderedColumns[orderedColumns.length - 1];
+            const w = columnWidths[col] || getDefaultWidth(col);
+            
+            html += `<td  class="${isLong ? 'has-long-text' : ''}"
+                style="${isLast ? '' : `width:${w}px; min-width:${w}px; max-width:${w}px;`}" title="${value}">${displayValue}</td>`;
         });
         html += "</tr>";
     });
@@ -195,7 +331,6 @@ function attachResizeHandlers() {
             startWidth = currentTh.offsetWidth;
             wrapperRect = wrapper.getBoundingClientRect();
 
-            // Align resize line with column edge
             const thRect = currentTh.getBoundingClientRect();
             resizeLine.style.left =
                 (thRect.right - wrapperRect.left + wrapper.scrollLeft) + 'px';
@@ -212,12 +347,10 @@ function attachResizeHandlers() {
         const diff = e.clientX - startX;
         const newWidth = Math.max(120, startWidth + diff);
 
-        // Apply width to header
         currentTh.style.width = newWidth + 'px';
         currentTh.style.minWidth = newWidth + 'px';
         currentTh.style.maxWidth = newWidth + 'px';
 
-        // Apply width to body cells
         const columnIndex = currentTh.cellIndex + 1;
         table.querySelectorAll(`tbody tr td:nth-child(${columnIndex})`)
             .forEach(td => {
@@ -226,7 +359,10 @@ function attachResizeHandlers() {
                 td.style.maxWidth = newWidth + 'px';
             });
 
-        // ✅ FIX: anchor resize line to column edge, not mouse
+        // Store width for this column
+        const colName = currentTh.getAttribute('data-column');
+        columnWidths[colName] = newWidth;
+
         const thRect = currentTh.getBoundingClientRect();
         resizeLine.style.left =
             (thRect.right - wrapperRect.left + wrapper.scrollLeft) + 'px';
@@ -251,15 +387,22 @@ function renderPagination(totalPages) {
 
     const MAX_VISIBLE = 5;
 
+    // Previous button
     const prev = document.createElement("button");
-    prev.innerText = "Previous";
+    prev.innerText = "← Previous";
     prev.disabled = page === 1;
     prev.onclick = () => {
+        if (page === 1) return;
         page--;
-        loadData();
+        if (searchQuery) {
+            loadSearchResults();
+        } else {
+            loadData();
+        }
     };
     pagination.appendChild(prev);
 
+    // Calculate visible page range
     let start = Math.max(1, page - Math.floor(MAX_VISIBLE / 2));
     let end = start + MAX_VISIBLE - 1;
 
@@ -268,37 +411,60 @@ function renderPagination(totalPages) {
         start = Math.max(1, end - MAX_VISIBLE + 1);
     }
 
+    // First page + ellipsis
     if (start > 1) {
         addPageButton(1);
-        if (start > 2) pagination.append("...");
+        if (start > 2) {
+            const ellipsis = document.createElement("span");
+            ellipsis.innerText = "...";
+            pagination.appendChild(ellipsis);
+        }
     }
 
+    // Visible page numbers
     for (let i = start; i <= end; i++) {
         addPageButton(i);
     }
 
+    // Ellipsis + last page
     if (end < totalPages) {
-        if (end < totalPages - 1) pagination.append("...");
+        if (end < totalPages - 1) {
+            const ellipsis = document.createElement("span");
+            ellipsis.innerText = "...";
+            pagination.appendChild(ellipsis);
+        }
         addPageButton(totalPages);
     }
 
+    // Next button
     const next = document.createElement("button");
-    next.innerText = "Next";
+    next.innerText = "Next →";
     next.disabled = page === totalPages;
     next.onclick = () => {
+        if (page === totalPages) return;
         page++;
-        loadData();
+        if (searchQuery) {
+            loadSearchResults();
+        } else {
+            loadData();
+        }
     };
     pagination.appendChild(next);
 }
 
 function addPageButton(n) {
+    const pagination = document.getElementById("pagination");
     const b = document.createElement("button");
     b.innerText = n;
     if (n === page) b.classList.add("active");
     b.onclick = () => {
+        if (page === n) return;
         page = n;
-        loadData();
+        if (searchQuery) {
+            loadSearchResults();
+        } else {
+            loadData();
+        }
     };
     pagination.appendChild(b);
 }
@@ -309,7 +475,6 @@ function exportData(format) {
     const text = document.getElementById("exportText");
     const spinner = document.getElementById("exportSpinner");
 
-    // --- UI: start loading ---
     if (btn) btn.disabled = true;
     if (spinner) spinner.style.display = "inline-block";
     if (text) text.innerText = "Exporting...";
@@ -337,17 +502,13 @@ function exportData(format) {
         .catch(err => {
             console.error(err);
             alert("Export failed or session expired");
-            localStorage.removeItem("access_token");
-            window.location.href = "/static/login.html";
         })
         .finally(() => {
-            // --- UI: restore ---
             if (btn) btn.disabled = false;
             if (spinner) spinner.style.display = "none";
             if (text) text.innerText = "Export";
         });
 }
-
 
 /* ---------- RELATED RECORDS ---------- */
 function openRelatedRecords() {
@@ -360,8 +521,19 @@ function openRelatedRecords() {
 
 /* ---------- INIT ---------- */
 async function init() {
-    await loadFileMetadata();
-    await loadData();
+    if (!uploadId) {
+        alert("No upload ID found in URL");
+        window.location.href = "/static/upload.html";
+        return;
+    }
+    
+    try {
+        await loadFileMetadata();
+        await loadData();
+    } catch (err) {
+        console.error("Initialization error:", err);
+        alert("Failed to load data. Please try again.");
+    }
 }
 
 init();
