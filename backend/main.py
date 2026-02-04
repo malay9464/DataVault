@@ -6,11 +6,14 @@ from header import (
     detect_header_case,
     get_column_samples,
     apply_user_headers,
-    normalize_header_name
+    normalize_header_name,
+    infer_semantic_role,
+    build_semantic_roles,
+    normalize_column_name
 )
 import tempfile
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Tuple
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -95,88 +98,171 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 def clean_nan(row):
     return {k: (None if pd.isna(v) else v) for k, v in row.items()}
 
-# ---------------- FIELD NORMALIZATION ----------------
+def extract_relationship_fields(
+    df: pd.DataFrame,
+    semantic_roles: Dict[int, str],
+    column_names: List[str]
+) -> pd.DataFrame:
+    """
+    Extract relationship fields (_rel_email, _rel_phone, _rel_name) 
+    from user columns based on semantic roles.
+    
+    CRITICAL: Does NOT modify or drop user columns.
+    Only ADDS new _rel_* fields alongside existing columns.
+    
+    Args:
+        df: DataFrame with user column names already applied
+        semantic_roles: {column_index: role} mapping
+        column_names: List of final column names (matches df.columns)
+        
+    Returns:
+        DataFrame with original columns + _rel_* fields
+    """
+    
+    def clean_email(v):
+        if pd.isna(v) or v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s or s == 'nan':
+            return None
+        return s
+    
+    def clean_phone(v):
+        if pd.isna(v) or v is None:
+            return None
+        digits = ''.join(c for c in str(v) if c.isdigit())
+        if not digits:
+            return None
+        return digits
+    
+    def clean_name(v):
+        if pd.isna(v) or v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s or s == 'nan':
+            return None
+        return s
+    
+    # Build lists of columns for each role
+    email_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'email']
+    phone_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'phone']
+    name_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'name']
+    
+    # Extract email (first non-null from all email columns)
+    if email_cols:
+        # Filter to only columns that exist in dataframe
+        existing_email_cols = [c for c in email_cols if c in df.columns]
+        if existing_email_cols:
+            df["_rel_email"] = df[existing_email_cols].apply(
+                lambda row: next((clean_email(v) for v in row if clean_email(v) is not None), None),
+                axis=1
+            )
+    
+    # Extract phone (first non-null from all phone columns)
+    if phone_cols:
+        existing_phone_cols = [c for c in phone_cols if c in df.columns]
+        if existing_phone_cols:
+            df["_rel_phone"] = df[existing_phone_cols].apply(
+                lambda row: next((clean_phone(v) for v in row if clean_phone(v) is not None), None),
+                axis=1
+            )
+    
+    # Extract name (first non-null from all name columns)
+    if name_cols:
+        existing_name_cols = [c for c in name_cols if c in df.columns]
+        if existing_name_cols:
+            df["_rel_name"] = df[existing_name_cols].apply(
+                lambda row: next((clean_name(v) for v in row if clean_name(v) is not None), None),
+                axis=1
+            )
+    
+    return df
 
+# ---------------- FIELD NORMALIZATION ----------------
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # standardize column names
     df.columns = [c.strip().lower() for c in df.columns]
     return df
 
-
-def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    # Normalize column names once
+def normalize_dataframe_legacy(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    LEGACY FUNCTION - Only used for files with auto-detected valid headers.
+    
+    Auto-detects email/phone/name columns and creates _rel_* fields.
+    Does NOT drop any columns - preserves all user data.
+    """
+    # Normalize column names first
     df.columns = [
         c.strip().lower().replace(" ", "_").replace("-", "_")
         for c in df.columns
     ]
-
+    
+    # Auto-detect email columns
     email_cols = []
     for c in df.columns:
-        if c in ["email", "e_mail", "mail", "email_address"]:
-            email_cols = [c]  # Use exact match
+        cleaned = c.replace('_', '').replace('-', '')
+        if cleaned in ['email', 'mail', 'emailaddress', 'emailid']:
+            email_cols = [c]
             break
     if not email_cols:
-        email_cols = [c for c in df.columns if "email" in c or c == "mail"]
+        email_cols = [c for c in df.columns if 'email' in c or c == 'mail']
     
-    # Phone: look for exact matches first (INCLUDING contact fields)
+    # Auto-detect phone columns
     phone_cols = []
     for c in df.columns:
-        if c in ["phone", "phone_no", "phone_number", "mobile", "mobile_no", "mobile_number", "contact", "contact_no", "contact_number"]:
-            phone_cols = [c]  # Use exact match
+        cleaned = c.replace('_', '').replace('-', '')
+        if cleaned in ['phone', 'phoneno', 'phonenumber', 'mobile', 'mobileno', 'mobilenumber', 
+                       'contact', 'contactno', 'contactnumber']:
+            phone_cols = [c]
             break
     if not phone_cols:
-        phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c or "contact" in c]
+        phone_cols = [c for c in df.columns if 'phone' in c or 'mobile' in c or 'contact' in c]
     
-    # Name: look for exact matches first
+    # Auto-detect name columns
     name_cols = []
     for c in df.columns:
-        if c in ["name", "full_name", "fullname", "customer_name", "client_name"]:
+        cleaned = c.replace('_', '').replace('-', '')
+        if cleaned in ['name', 'fullname', 'customername', 'clientname']:
             name_cols = [c]
             break
     if not name_cols:
-        name_cols = [c for c in df.columns if "name" in c]
-
+        name_cols = [c for c in df.columns if 'name' in c]
+    
+    # Cleaning functions
     def clean_email(v):
         if pd.isna(v): return None
         return str(v).strip().lower()
-
+    
     def clean_phone(v):
         if pd.isna(v): return None
         return "".join(c for c in str(v) if c.isdigit())
-
+    
     def clean_name(v):
         if pd.isna(v): return None
         return str(v).strip().lower()
-
-    # Create normalized columns
-    df["email"] = (
-        df[email_cols]
-        .apply(lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1)
-        if email_cols else None
-    )
-
-    df["phone"] = (
-        df[phone_cols]
-        .apply(lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1)
-        if phone_cols else None
-    )
-
-    df["name"] = (
-        df[name_cols]
-        .apply(lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1)
-        if name_cols else None
-    )
-
-    # ✅ Drop ONLY the columns that were used for canonical fields
-    columns_to_drop = set(email_cols + phone_cols + name_cols)
     
-    # Don't drop the normalized columns if they already existed
-    columns_to_drop.discard("email")
-    columns_to_drop.discard("phone")
-    columns_to_drop.discard("name")
+    # Create _rel_* fields (do NOT drop original columns)
+    if email_cols:
+        df["_rel_email"] = df[email_cols].apply(
+            lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), 
+            axis=1
+        )
     
-    df = df.drop(columns=list(columns_to_drop))
-
+    if phone_cols:
+        df["_rel_phone"] = df[phone_cols].apply(
+            lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), 
+            axis=1
+        )
+    
+    if name_cols:
+        df["_rel_name"] = df[name_cols].apply(
+            lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), 
+            axis=1
+        )
+    
+    # ✅ CRITICAL FIX: Do NOT drop any columns
+    # User columns are preserved, _rel_* fields are added alongside
+    
     return df
 
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
@@ -326,7 +412,7 @@ async def upload_file(
 
             total_records += len(chunk)
 
-            chunk = normalize_dataframe(chunk)
+            chunk = normalize_dataframe_legacy(chunk)
 
             chunk = chunk.drop_duplicates()
 
@@ -346,7 +432,7 @@ async def upload_file(
 
         total_records = len(df)
 
-        df = normalize_dataframe(df)
+        df = normalize_dataframe_legacy(df)
 
         df = df.drop_duplicates()
 
@@ -374,9 +460,19 @@ async def upload_file(
         conn.commit()
 
     # ---------- 4. INSERT UPLOAD LOG ----------
+    final_column_names = [c.strip().lower().replace(" ", "_").replace("-", "_") for c in preview_df.columns]
     
-    # Store final headers for valid case
-    final_headers = {'columns': [str(c) for c in preview_df.columns]}
+    # Auto-detect semantic roles for valid headers
+    semantic_roles_dict = {}
+    for idx, col_name in enumerate(final_column_names):
+        role = infer_semantic_role(col_name)
+        if role:
+            semantic_roles_dict[idx] = role
+    
+    final_headers = {
+        'columns': final_column_names,
+        'semantic_roles': semantic_roles_dict
+    }
     
     with engine.connect() as conn:
         conn.execute(
@@ -386,10 +482,10 @@ async def upload_file(
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
                  header_status, original_headers, final_headers, 
-                 header_resolution_type)
+                 header_resolution_type, semantic_roles)
                 VALUES
                 (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
-                 'no_issue', :orig, :final, 'original')
+                 'no_issue', :orig, :final, 'original', :sem_roles)
             """),
             {
                 "uid": upload_id,
@@ -399,7 +495,8 @@ async def upload_file(
                 "d": duplicate_records,
                 "user_id": user["id"],
                 "orig": json.dumps(original_headers),
-                "final": json.dumps(final_headers)
+                "final": json.dumps(final_headers),
+                "sem_roles": json.dumps(semantic_roles_dict)
             }
         )
         conn.commit()
@@ -505,31 +602,28 @@ async def resolve_headers(
         raise HTTPException(status_code=400, detail="Unsupported file")
     
     total_columns = len(sample_df.columns)
-    
-    # Build final column names
+
     final_column_names = []
     for idx in range(total_columns):
         if idx in user_mapping and user_mapping[idx].strip():
-            final_column_names.append(user_mapping[idx].strip().lower().replace(' ', '_'))
+            final_column_names.append(normalize_column_name(user_mapping[idx]))
         else:
             final_column_names.append(f'unnamed_{idx}')
     
+    # Build semantic roles from user mapping
+    semantic_roles_dict = build_semantic_roles(user_mapping)
+    
     # Store final headers
+    # Store final headers with semantic roles
     final_headers = {
         'columns': final_column_names,
         'user_mapping': user_mapping,
-        'first_row_was_data': first_row_is_data
+        'first_row_was_data': first_row_is_data,
+        'semantic_roles': semantic_roles_dict
     }
     
-    # ========== CRITICAL: DETERMINE INGESTION MODE ==========
-    user_resolved = (len(user_mapping) > 0 or first_row_is_data)
-    
-    if user_resolved:
-        ingestion_mode = 'raw'
-        resolution_type = 'first_row_corrected' if first_row_is_data else 'user_assigned_partial'
-    else:
-        ingestion_mode = 'normalized'
-        resolution_type = 'original'
+    # Determine resolution type (for logging only)
+    resolution_type = 'first_row_corrected' if first_row_is_data else 'user_assigned_partial'
 
     # Initialize counters
     total_records = 0
@@ -564,13 +658,11 @@ async def resolve_headers(
             
             total_records += len(chunk)
             
-            # ========== MODE-BASED NORMALIZATION ==========
-            if ingestion_mode == 'normalized':
-                # NORMALIZED MODE: Apply auto-normalization
-                chunk = normalize_dataframe(chunk)
-            # else: RAW MODE - NO normalization, preserve ALL columns
+            # ========== UNIFIED EXTRACTION ==========
+            # Extract relationship fields using semantic roles
+            chunk = extract_relationship_fields(chunk, semantic_roles_dict, final_column_names)
             
-            # Deduplication (works on current columns, whatever they are)
+            # Deduplication
             chunk = chunk.drop_duplicates()
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
@@ -589,17 +681,16 @@ async def resolve_headers(
             raise HTTPException(status_code=400, detail="Unsupported file")
         
         # Apply final column names
+        # Apply final column names
         df.columns = final_column_names
         
         total_records = len(df)
         
-        # ========== MODE-BASED NORMALIZATION ==========
-        if ingestion_mode == 'normalized':
-            # NORMALIZED MODE: Apply auto-normalization
-            df = normalize_dataframe(df)
-        # else: RAW MODE - NO normalization, preserve ALL columns
+        # ========== UNIFIED EXTRACTION ==========
+        # Extract relationship fields using semantic roles
+        df = extract_relationship_fields(df, semantic_roles_dict, final_column_names)
         
-        # Deduplication (works on current columns, whatever they are)
+        # Deduplication
         df = df.drop_duplicates()
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
@@ -622,10 +713,10 @@ async def resolve_headers(
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
                  header_status, original_headers, final_headers, 
-                 header_resolution_type, first_row_is_data)
+                 header_resolution_type, first_row_is_data, semantic_roles)
                 VALUES
                 (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
-                 'resolved', :orig, :final, :res_type, :first_data)
+                 'resolved', :orig, :final, :res_type, :first_data, :sem_roles)
             """),
             {
                 "uid": upload_id,
@@ -637,7 +728,8 @@ async def resolve_headers(
                 "orig": json.dumps(original_headers_json),
                 "final": json.dumps(final_headers),
                 "res_type": resolution_type,
-                "first_data": first_row_is_data
+                "first_data": first_row_is_data,
+                "sem_roles": json.dumps(semantic_roles_dict)
             }
         )
         conn.commit()
@@ -656,10 +748,8 @@ async def resolve_headers(
         "upload_id": upload_id,
         "total_records": total_records,
         "duplicate_records": duplicate_records,
-        "resolution_type": resolution_type,
-        "ingestion_mode": ingestion_mode  # For debugging
+        "resolution_type": resolution_type
     }
-
 # ---------------- UPLOAD LIST ----------------
 @app.get("/uploads")
 def list_uploads(
@@ -850,19 +940,19 @@ def preview_data(
     if not rows:
         return {"columns": [], "rows": [], "total_records": total}
 
-    excluded_prefixes = ["original_", "raw_"]
+    # Hide internal _rel_* fields from preview
     all_columns = list(rows[0].row_data.keys())
-    normalized_columns = [
+    user_columns = [
         col for col in all_columns 
-        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
+        if not col.startswith('_rel_')
     ]
 
     return {
-        "columns": normalized_columns,
+        "columns": user_columns,
         "rows": [
             {
                 "id": r.id,
-                "values": [r.row_data.get(col) for col in normalized_columns]
+                "values": [r.row_data.get(col) for col in user_columns]
             }
             for r in rows
         ],
@@ -931,19 +1021,17 @@ def search_data(
             {"uid": upload_id, "search": search_term, "limit": page_size, "offset": offset}
         ).fetchall()
     
-    # Filter columns (same as preview)
-    excluded_prefixes = ["original_", "raw_"]
-    normalized_columns = [
+    user_columns = [
         col for col in columns 
-        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
+        if not col.startswith('_rel_')
     ]
     
     return {
-        "columns": normalized_columns,
+        "columns": user_columns,
         "rows": [
             {
                 "id": r.id,
-                "values": [r.row_data.get(col) for col in normalized_columns]
+                "values": [r.row_data.get(col) for col in user_columns]
             }
             for r in rows
         ],
@@ -1268,8 +1356,8 @@ def related_records(
         base = conn.execute(
             text("""
                 SELECT
-                    row_data->>'email' AS email,
-                    row_data->>'phone' AS phone
+                    row_data->>'_rel_email' AS email,
+                    row_data->>'_rel_phone' AS phone
                 FROM cleaned_data
                 WHERE id = :rid
                   AND upload_id = :uid
@@ -1290,8 +1378,8 @@ def related_records(
                 FROM cleaned_data
                 WHERE upload_id = :uid
                   AND (
-                        (:email IS NOT NULL AND row_data->>'email' = :email)
-                     OR (:phone IS NOT NULL AND row_data->>'phone' = :phone)
+                        (:email IS NOT NULL AND row_data->>'_rel_email' = :email)
+                     OR (:phone IS NOT NULL AND row_data->>'_rel_phone' = :phone)
                   )
                 ORDER BY id
             """),
@@ -1330,13 +1418,12 @@ def related_search(
     value = value.strip()
     normalized_phone = ''.join(c for c in value if c.isdigit())
     
-    # Build the WHERE clause dynamically to avoid matching empty strings
-    where_conditions = ["LOWER(TRIM(row_data->>'email')) = LOWER(:val)"]
+    where_conditions = ["LOWER(TRIM(row_data->>'_rel_email')) = LOWER(:val)"]
     query_params = {"uid": upload_id, "val": value}
     
     # Only add phone condition if we have digits in the search value
     if normalized_phone:
-        where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone")
+        where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = :norm_phone")
         query_params["norm_phone"] = normalized_phone
     
     where_sql = " OR ".join(where_conditions)
@@ -1359,8 +1446,8 @@ def related_search(
                 SELECT 
                     id,
                     row_data,
-                    LOWER(TRIM(row_data->>'email')) AS email,
-                    REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                    LOWER(TRIM(row_data->>'_rel_email')) AS email,
+                    REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
                 FROM cleaned_data
                 WHERE upload_id = :uid
                 AND ({where_sql})
@@ -1415,8 +1502,8 @@ def related_grouped(
                     SELECT 
                         id,
                         row_data,
-                        LOWER(TRIM(row_data->>'email')) AS email,
-                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                        LOWER(TRIM(row_data->>'_rel_email')) AS email,
+                        REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
                     FROM cleaned_data
                     WHERE upload_id = :uid
                 ),
@@ -1458,11 +1545,10 @@ def related_grouped(
         for email in list(email_to_phones.keys()):
             phones = conn.execute(
                 text("""
-                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
                     FROM cleaned_data
                     WHERE upload_id = :uid
-                    AND LOWER(TRIM(row_data->>'email')) = :email
-                    AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != ''
+                    AND LOWER(TRIM(row_data->>'_rel_email')) = :email
                 """),
                 {"uid": upload_id, "email": email}
             ).fetchall()
@@ -1531,8 +1617,8 @@ def related_grouped(
                     FROM cleaned_data
                     WHERE upload_id = :uid
                     AND (
-                        LOWER(TRIM(row_data->>'email')) = ANY(:emails)
-                        OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
+                        LOWER(TRIM(row_data->>'_rel_email')) = ANY(:emails)
+                        OR REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
                     )
                     ORDER BY id
                 """),
@@ -1605,8 +1691,8 @@ def related_grouped_stats(
                 WITH normalized AS (
                     SELECT 
                         id,
-                        LOWER(TRIM(row_data->>'email')) AS email,
-                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                        LOWER(TRIM(row_data->>'_rel_email')) AS email,
+                        REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
                     FROM cleaned_data
                     WHERE upload_id = :uid
                 ),
@@ -1653,10 +1739,10 @@ def related_grouped_stats(
         for email in list(email_to_phones.keys()):
             phones = conn.execute(
                 text("""
-                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
                     FROM cleaned_data
                     WHERE upload_id = :uid
-                    AND LOWER(TRIM(row_data->>'email')) = :email
+                    AND LOWER(TRIM(row_data->>'_rel_email')) = :email
                     AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != ''
                 """),
                 {"uid": upload_id, "email": email}
@@ -1763,8 +1849,8 @@ def related_grouped_stats(
                         FROM cleaned_data
                         WHERE upload_id = :uid
                         AND (
-                            LOWER(TRIM(row_data->>'email')) = ANY(:emails)
-                            OR REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
+                            LOWER(TRIM(row_data->>'_rel_email')) = ANY(:emails)
+                            OR REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
                         )
                     """),
                     {"uid": upload_id, "emails": list(emails), "phones": list(phones)}
@@ -1831,3 +1917,103 @@ def get_header_metadata(
             "first_row_was_data": result.first_row_is_data,
             "header_status": result.header_status
         }
+    
+def infer_semantic_role(column_name: str) -> Optional[str]:
+    """
+    Infer semantic role from user-provided column name.
+    Uses fuzzy matching with separator removal.
+    
+    Returns:
+        'email', 'phone', 'name', or None
+        
+    Examples:
+        "E-mail" → "email"
+        "Phone_No" → "phone"
+        "Contact-Number" → "phone"
+        "Full.Name" → "name"
+    """
+    if not column_name:
+        return None
+    
+    # Remove all common separators for matching
+    normalized = column_name.lower()
+    cleaned = normalized.replace('-', '').replace('_', '').replace(' ', '').replace('.', '')
+    
+    # Email patterns (check most specific first)
+    email_patterns = [
+        'emailaddress', 'emailid', 'email', 'mail'
+    ]
+    for pattern in email_patterns:
+        if pattern in cleaned:
+            return 'email'
+    
+    # Phone patterns (check most specific first)
+    phone_patterns = [
+        'phonenumber', 'phoneno', 'mobilenumber', 'mobileno', 
+        'contactnumber', 'contactno', 'cellnumber', 'cellno',
+        'phone', 'mobile', 'contact', 'cell'
+    ]
+    for pattern in phone_patterns:
+        if pattern in cleaned:
+            return 'phone'
+    
+    # Name patterns
+    name_patterns = [
+        'fullname', 'firstname', 'lastname', 'customername', 
+        'clientname', 'username', 'name'
+    ]
+    for pattern in name_patterns:
+        if pattern in cleaned:
+            return 'name'
+    
+    return None
+
+def build_semantic_roles(user_mapping: Dict[int, str]) -> Dict[int, str]:
+    """
+    Build semantic role mapping from user-provided column names.
+    
+    Args:
+        user_mapping: {column_index: column_name}
+        
+    Returns:
+        {column_index: semantic_role}
+        
+    Example:
+        Input: {0: "Full Name", 2: "E-mail", 5: "Phone_No"}
+        Output: {0: "name", 2: "email", 5: "phone"}
+    """
+    semantic_roles = {}
+    
+    for idx, col_name in user_mapping.items():
+        role = infer_semantic_role(col_name)
+        if role:
+            semantic_roles[idx] = role
+    
+    return semantic_roles
+
+def normalize_column_name(name: str) -> str:
+    """
+    Normalize column name for storage.
+    Converts to lowercase and replaces separators with underscores.
+    
+    Examples:
+        "E-mail" → "e_mail"
+        "Phone No" → "phone_no"
+        "Full.Name" → "full_name"
+    """
+    if not name:
+        return name
+    
+    normalized = name.strip().lower()
+    # Replace all common separators with underscore
+    for sep in ['-', '.', ' ']:
+        normalized = normalized.replace(sep, '_')
+    
+    # Remove consecutive underscores
+    while '__' in normalized:
+        normalized = normalized.replace('__', '_')
+    
+    # Remove leading/trailing underscores
+    normalized = normalized.strip('_')
+    
+    return normalized

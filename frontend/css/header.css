@@ -203,13 +203,11 @@
 
 /* Unnamed column indicator */
 #headerTable .detected-row td.unnamed {
-    background: #fef3c7;
     color: #92400e;
     font-weight: 500;
 }
 
 #headerTable .detected-row td.unnamed::after {
-    content: ' ⚠️';
     font-size: 12px;
     margin-left: 4px;
 }

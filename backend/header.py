@@ -147,3 +147,96 @@ def normalize_header_name(name: str) -> str:
     Normalize a header name (lowercase, underscores, etc.)
     """
     return name.strip().lower().replace(' ', '_').replace('-', '_')
+
+def infer_semantic_role(column_name: str) -> Optional[str]:
+    """
+    Infer semantic role from user-provided column name.
+    Uses fuzzy matching with separator removal.
+    
+    Returns:
+        'email', 'phone', 'name', or None
+    """
+    if not column_name:
+        return None
+    
+    # Remove all common separators for matching
+    normalized = column_name.lower()
+    cleaned = normalized.replace('-', '').replace('_', '').replace(' ', '').replace('.', '')
+    
+    # Email patterns (check most specific first)
+    email_patterns = [
+        'emailaddress', 'emailid', 'email', 'mail', 'e-mail', 'e_mail'
+    ]
+    if any(pattern in cleaned for pattern in email_patterns):
+        return 'email'
+    
+    # Phone patterns (check most specific first)
+    phone_patterns = [
+        'phonenumber', 'phoneno', 'mobilenumber', 'mobileno', 
+        'contactnumber', 'contactno', 'cellnumber', 'cellno',
+        'phone', 'mobile', 'contact', 'cell'
+    ]
+    if any(pattern in cleaned for pattern in phone_patterns):
+        return 'phone'
+    
+    # Name patterns
+    name_patterns = [
+        'fullname', 'firstname', 'lastname', 'customername', 
+        'clientname', 'username', 'name'
+    ]
+    if any(pattern in cleaned for pattern in name_patterns):
+        return 'name'
+    
+    return None
+
+
+def build_semantic_roles(user_mapping: Dict[int, str]) -> Dict[int, str]:
+    """
+    Build semantic role mapping from user-provided column names.
+    
+    Args:
+        user_mapping: {column_index: column_name}
+        
+    Returns:
+        {column_index: semantic_role}
+        
+    Example:
+        Input: {0: "Full Name", 2: "E-mail", 5: "Phone_No"}
+        Output: {0: "name", 2: "email", 5: "phone"}
+    """
+    semantic_roles = {}
+    
+    for idx, col_name in user_mapping.items():
+        role = infer_semantic_role(col_name)
+        if role:
+            semantic_roles[idx] = role
+    
+    return semantic_roles
+
+
+def normalize_column_name(name: str) -> str:
+    """
+    Normalize column name for storage.
+    Converts to lowercase and replaces separators with underscores.
+    
+    Examples:
+        "E-mail" → "e_mail"
+        "Phone No" → "phone_no"
+        "Full.Name" → "full_name"
+    """
+    if not name:
+        return name
+    
+    normalized = name.strip().lower()
+    # Replace all common separators with underscore
+    for sep in ['-', '.', ' ']:
+        normalized = normalized.replace(sep, '_')
+    
+    # Remove consecutive underscores
+    while '__' in normalized:
+        normalized = normalized.replace('__', '_')
+    
+    # Remove leading/trailing underscores
+    normalized = normalized.strip('_')
+    
+    return normalized
