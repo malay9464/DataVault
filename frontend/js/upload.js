@@ -542,11 +542,13 @@ async function loadUser() {
 }
 
 // ========== LOAD UPLOADS ==========
-async function loadUploads() {
-    // Show skeleton
-    tableSkeleton.style.display = "block";
-    tableWrapper.style.display = "none";
-    emptyState.style.display = "none";
+async function loadUploads(showSkeleton = false) {
+    // Only show skeleton on initial load, not on search/filter
+    if (showSkeleton) {
+        tableSkeleton.style.display = "block";
+        tableWrapper.style.display = "none";
+        emptyState.style.display = "none";
+    }
     
     let url = "";
 
@@ -819,7 +821,7 @@ function updateURL() {
 async function initPage() {
     await loadUser();
     await loadCategories();
-    await loadUploads();
+    await loadUploads(true); // Show skeleton only on initial load
 }
 
 initPage();
