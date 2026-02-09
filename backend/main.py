@@ -6,14 +6,11 @@ from header import (
     detect_header_case,
     get_column_samples,
     apply_user_headers,
-    normalize_header_name,
-    infer_semantic_role,
-    build_semantic_roles,
-    normalize_column_name
+    normalize_header_name
 )
 import tempfile
 from pydantic import BaseModel
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -98,171 +95,88 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 def clean_nan(row):
     return {k: (None if pd.isna(v) else v) for k, v in row.items()}
 
-def extract_relationship_fields(
-    df: pd.DataFrame,
-    semantic_roles: Dict[int, str],
-    column_names: List[str]
-) -> pd.DataFrame:
-    """
-    Extract relationship fields (_rel_email, _rel_phone, _rel_name) 
-    from user columns based on semantic roles.
-    
-    CRITICAL: Does NOT modify or drop user columns.
-    Only ADDS new _rel_* fields alongside existing columns.
-    
-    Args:
-        df: DataFrame with user column names already applied
-        semantic_roles: {column_index: role} mapping
-        column_names: List of final column names (matches df.columns)
-        
-    Returns:
-        DataFrame with original columns + _rel_* fields
-    """
-    
-    def clean_email(v):
-        if pd.isna(v) or v is None:
-            return None
-        s = str(v).strip().lower()
-        if not s or s == 'nan':
-            return None
-        return s
-    
-    def clean_phone(v):
-        if pd.isna(v) or v is None:
-            return None
-        digits = ''.join(c for c in str(v) if c.isdigit())
-        if not digits:
-            return None
-        return digits
-    
-    def clean_name(v):
-        if pd.isna(v) or v is None:
-            return None
-        s = str(v).strip().lower()
-        if not s or s == 'nan':
-            return None
-        return s
-    
-    # Build lists of columns for each role
-    email_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'email']
-    phone_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'phone']
-    name_cols = [column_names[i] for i, role in semantic_roles.items() if role == 'name']
-    
-    # Extract email (first non-null from all email columns)
-    if email_cols:
-        # Filter to only columns that exist in dataframe
-        existing_email_cols = [c for c in email_cols if c in df.columns]
-        if existing_email_cols:
-            df["_rel_email"] = df[existing_email_cols].apply(
-                lambda row: next((clean_email(v) for v in row if clean_email(v) is not None), None),
-                axis=1
-            )
-    
-    # Extract phone (first non-null from all phone columns)
-    if phone_cols:
-        existing_phone_cols = [c for c in phone_cols if c in df.columns]
-        if existing_phone_cols:
-            df["_rel_phone"] = df[existing_phone_cols].apply(
-                lambda row: next((clean_phone(v) for v in row if clean_phone(v) is not None), None),
-                axis=1
-            )
-    
-    # Extract name (first non-null from all name columns)
-    if name_cols:
-        existing_name_cols = [c for c in name_cols if c in df.columns]
-        if existing_name_cols:
-            df["_rel_name"] = df[existing_name_cols].apply(
-                lambda row: next((clean_name(v) for v in row if clean_name(v) is not None), None),
-                axis=1
-            )
-    
-    return df
-
 # ---------------- FIELD NORMALIZATION ----------------
+
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # standardize column names
     df.columns = [c.strip().lower() for c in df.columns]
     return df
 
-def normalize_dataframe_legacy(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    LEGACY FUNCTION - Only used for files with auto-detected valid headers.
-    
-    Auto-detects email/phone/name columns and creates _rel_* fields.
-    Does NOT drop any columns - preserves all user data.
-    """
-    # Normalize column names first
+
+def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    # Normalize column names once
     df.columns = [
         c.strip().lower().replace(" ", "_").replace("-", "_")
         for c in df.columns
     ]
-    
-    # Auto-detect email columns
+
     email_cols = []
     for c in df.columns:
-        cleaned = c.replace('_', '').replace('-', '')
-        if cleaned in ['email', 'mail', 'emailaddress', 'emailid']:
-            email_cols = [c]
+        if c in ["email", "e_mail", "mail", "email_address"]:
+            email_cols = [c]  # Use exact match
             break
     if not email_cols:
-        email_cols = [c for c in df.columns if 'email' in c or c == 'mail']
+        email_cols = [c for c in df.columns if "email" in c or c == "mail"]
     
-    # Auto-detect phone columns
+    # Phone: look for exact matches first (INCLUDING contact fields)
     phone_cols = []
     for c in df.columns:
-        cleaned = c.replace('_', '').replace('-', '')
-        if cleaned in ['phone', 'phoneno', 'phonenumber', 'mobile', 'mobileno', 'mobilenumber', 
-                       'contact', 'contactno', 'contactnumber']:
-            phone_cols = [c]
+        if c in ["phone", "phone_no", "phone_number", "mobile", "mobile_no", "mobile_number", "contact", "contact_no", "contact_number"]:
+            phone_cols = [c]  # Use exact match
             break
     if not phone_cols:
-        phone_cols = [c for c in df.columns if 'phone' in c or 'mobile' in c or 'contact' in c]
+        phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c or "contact" in c]
     
-    # Auto-detect name columns
+    # Name: look for exact matches first
     name_cols = []
     for c in df.columns:
-        cleaned = c.replace('_', '').replace('-', '')
-        if cleaned in ['name', 'fullname', 'customername', 'clientname']:
+        if c in ["name", "full_name", "fullname", "customer_name", "client_name"]:
             name_cols = [c]
             break
     if not name_cols:
-        name_cols = [c for c in df.columns if 'name' in c]
-    
-    # Cleaning functions
+        name_cols = [c for c in df.columns if "name" in c]
+
     def clean_email(v):
         if pd.isna(v): return None
         return str(v).strip().lower()
-    
+
     def clean_phone(v):
         if pd.isna(v): return None
         return "".join(c for c in str(v) if c.isdigit())
-    
+
     def clean_name(v):
         if pd.isna(v): return None
         return str(v).strip().lower()
+
+    # Create normalized columns
+    df["email"] = (
+        df[email_cols]
+        .apply(lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1)
+        if email_cols else None
+    )
+
+    df["phone"] = (
+        df[phone_cols]
+        .apply(lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1)
+        if phone_cols else None
+    )
+
+    df["name"] = (
+        df[name_cols]
+        .apply(lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1)
+        if name_cols else None
+    )
+
+    # ✅ Drop ONLY the columns that were used for canonical fields
+    columns_to_drop = set(email_cols + phone_cols + name_cols)
     
-    # Create _rel_* fields (do NOT drop original columns)
-    if email_cols:
-        df["_rel_email"] = df[email_cols].apply(
-            lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), 
-            axis=1
-        )
+    # Don't drop the normalized columns if they already existed
+    columns_to_drop.discard("email")
+    columns_to_drop.discard("phone")
+    columns_to_drop.discard("name")
     
-    if phone_cols:
-        df["_rel_phone"] = df[phone_cols].apply(
-            lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), 
-            axis=1
-        )
-    
-    if name_cols:
-        df["_rel_name"] = df[name_cols].apply(
-            lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), 
-            axis=1
-        )
-    
-    # ✅ CRITICAL FIX: Do NOT drop any columns
-    # User columns are preserved, _rel_* fields are added alongside
-    
+    df = df.drop(columns=list(columns_to_drop))
+
     return df
 
 # ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
@@ -336,11 +250,8 @@ async def upload_file(
         'metadata': metadata,
         'samples': column_samples
     }
-
-    # ========== CONDITIONAL FLOW ==========
-    
+  
     if case_type in ['missing', 'suspicious']:
-        # ========== TWO-PHASE COMMIT: NO DB RECORD YET ==========
         
         # 1. Save file to temp storage
         temp_dir = tempfile.gettempdir()
@@ -372,9 +283,7 @@ async def upload_file(
             "message": "Headers need review" if case_type == 'missing' else "First row might be data",
             "headers": original_headers
         }
-    
-    # ========== CASE 1: VALID HEADERS - PROCEED NORMALLY ==========
-    
+       
     total_records = 0
     duplicate_records = 0
     seen_hashes = set()
@@ -412,7 +321,7 @@ async def upload_file(
 
             total_records += len(chunk)
 
-            chunk = normalize_dataframe_legacy(chunk)
+            chunk = normalize_dataframe(chunk)
 
             chunk = chunk.drop_duplicates()
 
@@ -432,7 +341,7 @@ async def upload_file(
 
         total_records = len(df)
 
-        df = normalize_dataframe_legacy(df)
+        df = normalize_dataframe(df)
 
         df = df.drop_duplicates()
 
@@ -460,19 +369,9 @@ async def upload_file(
         conn.commit()
 
     # ---------- 4. INSERT UPLOAD LOG ----------
-    final_column_names = [c.strip().lower().replace(" ", "_").replace("-", "_") for c in preview_df.columns]
     
-    # Auto-detect semantic roles for valid headers
-    semantic_roles_dict = {}
-    for idx, col_name in enumerate(final_column_names):
-        role = infer_semantic_role(col_name)
-        if role:
-            semantic_roles_dict[idx] = role
-    
-    final_headers = {
-        'columns': final_column_names,
-        'semantic_roles': semantic_roles_dict
-    }
+    # Store final headers for valid case
+    final_headers = {'columns': [str(c) for c in preview_df.columns]}
     
     with engine.connect() as conn:
         conn.execute(
@@ -482,10 +381,10 @@ async def upload_file(
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
                  header_status, original_headers, final_headers, 
-                 header_resolution_type, semantic_roles)
+                 header_resolution_type)
                 VALUES
                 (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
-                 'no_issue', :orig, :final, 'original', :sem_roles)
+                 'no_issue', :orig, :final, 'original')
             """),
             {
                 "uid": upload_id,
@@ -495,8 +394,7 @@ async def upload_file(
                 "d": duplicate_records,
                 "user_id": user["id"],
                 "orig": json.dumps(original_headers),
-                "final": json.dumps(final_headers),
-                "sem_roles": json.dumps(semantic_roles_dict)
+                "final": json.dumps(final_headers)
             }
         )
         conn.commit()
@@ -557,7 +455,6 @@ async def resolve_headers(
     user_mapping = request.user_mapping
     first_row_is_data = request.first_row_is_data
     
-    # ========== READ FROM TEMP STORAGE ==========
     temp_dir = tempfile.gettempdir()
     temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
     temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
@@ -584,7 +481,6 @@ async def resolve_headers(
     with open(temp_file_path, 'rb') as f:
         contents = f.read()
     
-    # ========== PROCESS FILE ==========
     name = filename.lower()
     
     # Determine header parameter
@@ -602,28 +498,30 @@ async def resolve_headers(
         raise HTTPException(status_code=400, detail="Unsupported file")
     
     total_columns = len(sample_df.columns)
-
+    
+    # Build final column names
     final_column_names = []
     for idx in range(total_columns):
         if idx in user_mapping and user_mapping[idx].strip():
-            final_column_names.append(normalize_column_name(user_mapping[idx]))
+            final_column_names.append(user_mapping[idx].strip().lower().replace(' ', '_'))
         else:
             final_column_names.append(f'unnamed_{idx}')
     
-    # Build semantic roles from user mapping
-    semantic_roles_dict = build_semantic_roles(user_mapping)
-    
     # Store final headers
-    # Store final headers with semantic roles
     final_headers = {
         'columns': final_column_names,
         'user_mapping': user_mapping,
-        'first_row_was_data': first_row_is_data,
-        'semantic_roles': semantic_roles_dict
+        'first_row_was_data': first_row_is_data
     }
     
-    # Determine resolution type (for logging only)
-    resolution_type = 'first_row_corrected' if first_row_is_data else 'user_assigned_partial'
+    user_resolved = (len(user_mapping) > 0 or first_row_is_data)
+    
+    if user_resolved:
+        ingestion_mode = 'raw'
+        resolution_type = 'first_row_corrected' if first_row_is_data else 'user_assigned_partial'
+    else:
+        ingestion_mode = 'normalized'
+        resolution_type = 'original'
 
     # Initialize counters
     total_records = 0
@@ -635,7 +533,6 @@ async def resolve_headers(
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
 
-    # ========== CSV PROCESSING ==========
     if name.endswith(".csv"):
         try:
             reader = pd.read_csv(
@@ -658,11 +555,12 @@ async def resolve_headers(
             
             total_records += len(chunk)
             
-            # ========== UNIFIED EXTRACTION ==========
-            # Extract relationship fields using semantic roles
-            chunk = extract_relationship_fields(chunk, semantic_roles_dict, final_column_names)
+            if ingestion_mode == 'normalized':
+                # NORMALIZED MODE: Apply auto-normalization
+                chunk = normalize_dataframe(chunk)
+            # else: RAW MODE - NO normalization, preserve ALL columns
             
-            # Deduplication
+            # Deduplication (works on current columns, whatever they are)
             chunk = chunk.drop_duplicates()
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
@@ -673,7 +571,6 @@ async def resolve_headers(
 
         duplicate_records = total_records - len(seen_hashes)
     
-    # ========== EXCEL PROCESSING ==========
     else:
         if name.endswith(".xls") or name.endswith(".xlsx"):
             df = pd.read_excel(io.BytesIO(contents), header=header_param)
@@ -681,16 +578,16 @@ async def resolve_headers(
             raise HTTPException(status_code=400, detail="Unsupported file")
         
         # Apply final column names
-        # Apply final column names
         df.columns = final_column_names
         
         total_records = len(df)
         
-        # ========== UNIFIED EXTRACTION ==========
-        # Extract relationship fields using semantic roles
-        df = extract_relationship_fields(df, semantic_roles_dict, final_column_names)
+        if ingestion_mode == 'normalized':
+            # NORMALIZED MODE: Apply auto-normalization
+            df = normalize_dataframe(df)
+        # else: RAW MODE - NO normalization, preserve ALL columns
         
-        # Deduplication
+        # Deduplication (works on current columns, whatever they are)
         df = df.drop_duplicates()
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
@@ -704,7 +601,6 @@ async def resolve_headers(
         conn.execute(text("CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)"))
         conn.commit()
 
-    # ========== CREATE DB RECORD ==========
     with engine.connect() as conn:
         conn.execute(
             text("""
@@ -713,10 +609,10 @@ async def resolve_headers(
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
                  header_status, original_headers, final_headers, 
-                 header_resolution_type, first_row_is_data, semantic_roles)
+                 header_resolution_type, first_row_is_data)
                 VALUES
                 (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
-                 'resolved', :orig, :final, :res_type, :first_data, :sem_roles)
+                 'resolved', :orig, :final, :res_type, :first_data)
             """),
             {
                 "uid": upload_id,
@@ -728,8 +624,7 @@ async def resolve_headers(
                 "orig": json.dumps(original_headers_json),
                 "final": json.dumps(final_headers),
                 "res_type": resolution_type,
-                "first_data": first_row_is_data,
-                "sem_roles": json.dumps(semantic_roles_dict)
+                "first_data": first_row_is_data
             }
         )
         conn.commit()
@@ -748,8 +643,10 @@ async def resolve_headers(
         "upload_id": upload_id,
         "total_records": total_records,
         "duplicate_records": duplicate_records,
-        "resolution_type": resolution_type
+        "resolution_type": resolution_type,
+        "ingestion_mode": ingestion_mode  # For debugging
     }
+
 # ---------------- UPLOAD LIST ----------------
 @app.get("/uploads")
 def list_uploads(
@@ -940,19 +837,19 @@ def preview_data(
     if not rows:
         return {"columns": [], "rows": [], "total_records": total}
 
-    # Hide internal _rel_* fields from preview
+    excluded_prefixes = ["original_", "raw_"]
     all_columns = list(rows[0].row_data.keys())
-    user_columns = [
+    normalized_columns = [
         col for col in all_columns 
-        if not col.startswith('_rel_')
+        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
     ]
 
     return {
-        "columns": user_columns,
+        "columns": normalized_columns,
         "rows": [
             {
                 "id": r.id,
-                "values": [r.row_data.get(col) for col in user_columns]
+                "values": [r.row_data.get(col) for col in normalized_columns]
             }
             for r in rows
         ],
@@ -1021,17 +918,19 @@ def search_data(
             {"uid": upload_id, "search": search_term, "limit": page_size, "offset": offset}
         ).fetchall()
     
-    user_columns = [
+    # Filter columns (same as preview)
+    excluded_prefixes = ["original_", "raw_"]
+    normalized_columns = [
         col for col in columns 
-        if not col.startswith('_rel_')
+        if not any(col.startswith(prefix) for prefix in excluded_prefixes)
     ]
     
     return {
-        "columns": user_columns,
+        "columns": normalized_columns,
         "rows": [
             {
                 "id": r.id,
-                "values": [r.row_data.get(col) for col in user_columns]
+                "values": [r.row_data.get(col) for col in normalized_columns]
             }
             for r in rows
         ],
@@ -1356,8 +1255,8 @@ def related_records(
         base = conn.execute(
             text("""
                 SELECT
-                    row_data->>'_rel_email' AS email,
-                    row_data->>'_rel_phone' AS phone
+                    row_data->>'email' AS email,
+                    row_data->>'phone' AS phone
                 FROM cleaned_data
                 WHERE id = :rid
                   AND upload_id = :uid
@@ -1378,8 +1277,8 @@ def related_records(
                 FROM cleaned_data
                 WHERE upload_id = :uid
                   AND (
-                        (:email IS NOT NULL AND row_data->>'_rel_email' = :email)
-                     OR (:phone IS NOT NULL AND row_data->>'_rel_phone' = :phone)
+                        (:email IS NOT NULL AND row_data->>'email' = :email)
+                     OR (:phone IS NOT NULL AND row_data->>'phone' = :phone)
                   )
                 ORDER BY id
             """),
@@ -1418,12 +1317,13 @@ def related_search(
     value = value.strip()
     normalized_phone = ''.join(c for c in value if c.isdigit())
     
-    where_conditions = ["LOWER(TRIM(row_data->>'_rel_email')) = LOWER(:val)"]
+    # Build the WHERE clause dynamically to avoid matching empty strings
+    where_conditions = ["LOWER(TRIM(row_data->>'email')) = LOWER(:val)"]
     query_params = {"uid": upload_id, "val": value}
     
     # Only add phone condition if we have digits in the search value
     if normalized_phone:
-        where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = :norm_phone")
+        where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone")
         query_params["norm_phone"] = normalized_phone
     
     where_sql = " OR ".join(where_conditions)
@@ -1446,8 +1346,8 @@ def related_search(
                 SELECT 
                     id,
                     row_data,
-                    LOWER(TRIM(row_data->>'_rel_email')) AS email,
-                    REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
+                    LOWER(TRIM(row_data->>'email')) AS email,
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
                 FROM cleaned_data
                 WHERE upload_id = :uid
                 AND ({where_sql})
@@ -1486,194 +1386,196 @@ def related_grouped(
     user: dict = Depends(get_current_user)
 ):
     """
-    ✅ FIXED: 
-    1. Shows groups even if identifiers aren't present in ALL records
-    2. Displays ALL identifiers that connect the group (not just common ones)
-    3. Better group categorization
+    ✅ FIXED: Groups now match stats exactly
+    - Email Only: Shows only email-based groups
+    - Phone Only: Shows only phone-based groups  
+    - Both (Merged): Shows only email+phone combination groups
+    - All Groups: Shows all three types combined
     """
     if match_type == 'both':
         match_type = 'merged'
     
     with engine.begin() as conn:
-        # Get all duplicate groups
-        groups = conn.execute(
-            text("""
-                WITH normalized AS (
-                    SELECT 
-                        id,
-                        row_data,
-                        LOWER(TRIM(row_data->>'_rel_email')) AS email,
-                        REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
-                    FROM cleaned_data
-                    WHERE upload_id = :uid
-                ),
-                duplicate_emails AS (
-                    SELECT email AS match_key, COUNT(*) AS record_count
+        query = text("""
+            WITH 
+            normalized AS (
+                SELECT 
+                    id,
+                    row_data,
+                    LOWER(TRIM(row_data->>'email')) AS email,
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                FROM cleaned_data
+                WHERE upload_id = :uid
+            ),
+            
+            -- Email-based groups
+            email_groups AS (
+                SELECT 
+                    email AS group_key,
+                    'email' AS match_type,
+                    ARRAY[email] AS emails,
+                    NULL::text[] AS phones,
+                    COUNT(*) AS record_count,
+                    JSON_AGG(JSON_BUILD_OBJECT('id', id, 'data', row_data) ORDER BY id) AS records
+                FROM normalized
+                WHERE email IS NOT NULL AND email != ''
+                GROUP BY email
+                HAVING COUNT(*) > 1
+            ),
+            
+            -- Phone-based groups
+            phone_groups AS (
+                SELECT 
+                    phone AS group_key,
+                    'phone' AS match_type,
+                    NULL::text[] AS emails,
+                    ARRAY[phone] AS phones,
+                    COUNT(*) AS record_count,
+                    JSON_AGG(JSON_BUILD_OBJECT('id', id, 'data', row_data) ORDER BY id) AS records
+                FROM normalized
+                WHERE phone IS NOT NULL AND phone != ''
+                GROUP BY phone
+                HAVING COUNT(*) > 1
+            ),
+            
+            -- Merged groups (email + phone combinations)
+            merged_groups AS (
+                SELECT 
+                    email || '_' || phone AS group_key,
+                    'merged' AS match_type,
+                    ARRAY[email] AS emails,
+                    ARRAY[phone] AS phones,
+                    COUNT(*) AS record_count,
+                    JSON_AGG(JSON_BUILD_OBJECT('id', id, 'data', row_data) ORDER BY id) AS records
+                FROM normalized
+                WHERE email IS NOT NULL AND email != ''
+                  AND phone IS NOT NULL AND phone != ''
+                GROUP BY email, phone
+                HAVING COUNT(*) > 1
+            ),
+            
+            -- Combine based on filter
+            all_groups AS (
+                SELECT * FROM email_groups
+                WHERE :match_type IN ('all', 'email')
+                UNION ALL
+                SELECT * FROM phone_groups
+                WHERE :match_type IN ('all', 'phone')
+                UNION ALL
+                SELECT * FROM merged_groups
+                WHERE :match_type IN ('all', 'merged')
+            ),
+            
+            -- Rank by record count
+            ranked_groups AS (
+                SELECT 
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY record_count DESC, group_key) AS row_num
+                FROM all_groups
+            )
+            
+            SELECT 
+                emails,
+                phones,
+                match_type,
+                record_count,
+                records
+            FROM ranked_groups
+            WHERE row_num BETWEEN :offset + 1 AND :offset + :limit
+            ORDER BY record_count DESC, group_key;
+        """)
+        
+        offset = (page - 1) * page_size
+        
+        rows = conn.execute(
+            query,
+            {
+                "uid": upload_id,
+                "match_type": match_type,
+                "offset": offset,
+                "limit": page_size
+            }
+        ).fetchall()
+        
+        # Count total groups (simplified and accurate)
+        count_query = text("""
+            WITH 
+            normalized AS (
+                SELECT 
+                    LOWER(TRIM(row_data->>'email')) AS email,
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
+                FROM cleaned_data
+                WHERE upload_id = :uid
+            ),
+            email_group_count AS (
+                SELECT COUNT(*) AS cnt
+                FROM (
+                    SELECT email
                     FROM normalized
                     WHERE email IS NOT NULL AND email != ''
                     GROUP BY email
                     HAVING COUNT(*) > 1
-                ),
-                duplicate_phones AS (
-                    SELECT phone AS match_key, COUNT(*) AS record_count
+                ) e
+            ),
+            phone_group_count AS (
+                SELECT COUNT(*) AS cnt
+                FROM (
+                    SELECT phone
                     FROM normalized
                     WHERE phone IS NOT NULL AND phone != ''
                     GROUP BY phone
                     HAVING COUNT(*) > 1
-                )
-                SELECT 'email' AS type, match_key, record_count FROM duplicate_emails
-                UNION ALL
-                SELECT 'phone' AS type, match_key, record_count FROM duplicate_phones
-                ORDER BY record_count DESC, match_key
-            """),
-            {"uid": upload_id}
-        ).fetchall()
+                ) p
+            ),
+            merged_group_count AS (
+                SELECT COUNT(*) AS cnt
+                FROM (
+                    SELECT email, phone
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                      AND phone IS NOT NULL AND phone != ''
+                    GROUP BY email, phone
+                    HAVING COUNT(*) > 1
+                ) m
+            )
+            SELECT 
+                CASE 
+                    WHEN :match_type = 'email' THEN (SELECT cnt FROM email_group_count)
+                    WHEN :match_type = 'phone' THEN (SELECT cnt FROM phone_group_count)
+                    WHEN :match_type = 'merged' THEN (SELECT cnt FROM merged_group_count)
+                    ELSE 
+                        (SELECT cnt FROM email_group_count) + 
+                        (SELECT cnt FROM phone_group_count) + 
+                        (SELECT cnt FROM merged_group_count)
+                END AS total;
+        """)
         
-        # Build connection graph
-        email_to_phones = {}
-        phone_to_emails = {}
+        total_groups = conn.execute(
+            count_query,
+            {"uid": upload_id, "match_type": match_type}
+        ).scalar() or 0
         
-        for group in groups:
-            if group.type == 'email':
-                if group.match_key not in email_to_phones:
-                    email_to_phones[group.match_key] = set()
-            else:
-                if group.match_key not in phone_to_emails:
-                    phone_to_emails[group.match_key] = set()
-        
-        # Find email-phone connections
-        for email in list(email_to_phones.keys()):
-            phones = conn.execute(
-                text("""
-                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
-                    FROM cleaned_data
-                    WHERE upload_id = :uid
-                    AND LOWER(TRIM(row_data->>'_rel_email')) = :email
-                """),
-                {"uid": upload_id, "email": email}
-            ).fetchall()
-            
-            for p in phones:
-                if p.phone and p.phone in phone_to_emails:
-                    email_to_phones[email].add(p.phone)
-                    phone_to_emails[p.phone].add(email)
-        
-        # Union-Find algorithm
-        visited_emails = set()
-        visited_phones = set()
-        all_result_groups = []
-        
-        def process_cluster(start_type, start_val):
-            email_cluster = set()
-            phone_cluster = set()
-            queue = [(start_type, start_val)]
-            
-            while queue:
-                typ, val = queue.pop(0)
-                
-                if typ == 'email':
-                    if val in visited_emails:
-                        continue
-                    visited_emails.add(val)
-                    email_cluster.add(val)
-                    
-                    for phone in email_to_phones.get(val, []):
-                        if phone not in visited_phones:
-                            queue.append(('phone', phone))
-                else:
-                    if val in visited_phones:
-                        continue
-                    visited_phones.add(val)
-                    phone_cluster.add(val)
-                    
-                    for email in phone_to_emails.get(val, []):
-                        if email not in visited_emails:
-                            queue.append(('email', email))
-            
-            return email_cluster, phone_cluster
-        
-        # Process all emails
-        for email in email_to_phones:
-            if email not in visited_emails:
-                emails, phones = process_cluster('email', email)
-                if emails or phones:
-                    all_result_groups.append((emails, phones))
-        
-        # Process remaining phones
-        for phone in phone_to_emails:
-            if phone not in visited_phones:
-                emails, phones = process_cluster('phone', phone)
-                if emails or phones:
-                    all_result_groups.append((emails, phones))
-        
-        # Build result groups with records
+        # Format results
         formatted_groups = []
-        
-        for emails, phones in all_result_groups:
-            # Fetch all records in this cluster
-            records = conn.execute(
-                text("""
-                    SELECT id, row_data
-                    FROM cleaned_data
-                    WHERE upload_id = :uid
-                    AND (
-                        LOWER(TRIM(row_data->>'_rel_email')) = ANY(:emails)
-                        OR REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
-                    )
-                    ORDER BY id
-                """),
-                {
-                    "uid": upload_id,
-                    "emails": list(emails) if emails else [None],
-                    "phones": list(phones) if phones else [None]
-                }
-            ).fetchall()
-            
-            if not records:
-                continue
-            
-            # ✅ FIXED: Show ALL connecting identifiers (not just "common" ones)
+        for row in rows:
             match_display = []
-            if emails:
-                match_display.extend([f"📧 {e}" for e in sorted(emails)])
-            if phones:
-                match_display.extend([f"📱 {p}" for p in sorted(phones)])
-            
-            # Determine group type
-            if emails and phones:
-                grp_match_type = 'merged'
-            elif emails:
-                grp_match_type = 'email'
-            else:
-                grp_match_type = 'phone'
+            if row.emails:
+                match_display.extend([f"📧 {e}" for e in row.emails])
+            if row.phones:
+                match_display.extend([f"📱 {p}" for p in row.phones])
             
             formatted_groups.append({
-                "match_key": " | ".join(match_display),
-                "match_type": grp_match_type,
-                "record_count": len(records),
-                "records": [
-                    {"id": r.id, "data": r.row_data}
-                    for r in records
-                ]
+                "match_key": " | ".join(match_display) if match_display else "Unknown",
+                "match_type": row.match_type,
+                "record_count": row.record_count,
+                "records": row.records
             })
-        
-        # Sort by record count (descending)
-        formatted_groups.sort(key=lambda x: x['record_count'], reverse=True)
-        
-        # Apply filtering
-        if match_type != 'all':
-            formatted_groups = [g for g in formatted_groups if g['match_type'] == match_type]
-        
-        # Apply pagination
-        total_groups = len(formatted_groups)
-        offset = (page - 1) * page_size
-        paginated_groups = formatted_groups[offset:offset + page_size]
     
     return {
         "total_groups": total_groups,
         "page": page,
         "page_size": page_size,
-        "groups": paginated_groups
+        "groups": formatted_groups
     }
 
 @app.get("/related-grouped-stats")
@@ -1682,198 +1584,74 @@ def related_grouped_stats(
     user: dict = Depends(get_current_user)
 ):
     """
-    ✅ FIXED: Now properly calculates both_records
+    ✅ FIXED: Stats now match exactly what's displayed in /related-grouped
     """
     with engine.begin() as conn:
-        # First, build the actual merged groups (same logic as /related-grouped)
-        groups = conn.execute(
+        stats = conn.execute(
             text("""
-                WITH normalized AS (
+                WITH 
+                normalized AS (
                     SELECT 
                         id,
-                        LOWER(TRIM(row_data->>'_rel_email')) AS email,
-                        REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
+                        LOWER(TRIM(row_data->>'email')) AS email,
+                        REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') AS phone
                     FROM cleaned_data
                     WHERE upload_id = :uid
                 ),
-                duplicate_emails AS (
-                    SELECT email, COUNT(*) AS cnt
+                
+                -- Email-only groups (email duplicates with no phone duplicates)
+                email_groups AS (
+                    SELECT 
+                        email,
+                        COUNT(*) AS record_count
                     FROM normalized
                     WHERE email IS NOT NULL AND email != ''
                     GROUP BY email
                     HAVING COUNT(*) > 1
                 ),
-                duplicate_phones AS (
-                    SELECT phone, COUNT(*) AS cnt
+                
+                -- Phone-only groups (phone duplicates with no email duplicates)
+                phone_groups AS (
+                    SELECT 
+                        phone,
+                        COUNT(*) AS record_count
                     FROM normalized
                     WHERE phone IS NOT NULL AND phone != ''
                     GROUP BY phone
                     HAVING COUNT(*) > 1
+                ),
+                
+                -- Merged groups (both email AND phone have duplicates)
+                merged_groups AS (
+                    SELECT 
+                        email,
+                        phone,
+                        COUNT(*) AS record_count
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                      AND phone IS NOT NULL AND phone != ''
+                    GROUP BY email, phone
+                    HAVING COUNT(*) > 1
                 )
-                SELECT 'email' AS type, email AS identifier, cnt
-                FROM duplicate_emails
-                UNION ALL
-                SELECT 'phone' AS type, phone AS identifier, cnt
-                FROM duplicate_phones
+                
+                SELECT 
+                    (SELECT COUNT(*) FROM email_groups) AS email_groups,
+                    (SELECT COALESCE(SUM(record_count), 0) FROM email_groups) AS email_records,
+                    (SELECT COUNT(*) FROM phone_groups) AS phone_groups,
+                    (SELECT COALESCE(SUM(record_count), 0) FROM phone_groups) AS phone_records,
+                    (SELECT COUNT(*) FROM merged_groups) AS both_groups,
+                    (SELECT COALESCE(SUM(record_count), 0) FROM merged_groups) AS both_records;
             """),
             {"uid": upload_id}
-        ).fetchall()
-        
-        # Build email-phone connection graph
-        email_to_phones = {}
-        phone_to_emails = {}
-        email_counts = {}
-        phone_counts = {}
-        
-        for row in groups:
-            if row.type == 'email':
-                email_counts[row.identifier] = row.cnt
-                if row.identifier not in email_to_phones:
-                    email_to_phones[row.identifier] = set()
-            else:
-                phone_counts[row.identifier] = row.cnt
-                if row.identifier not in phone_to_emails:
-                    phone_to_emails[row.identifier] = set()
-        
-        # Find connections between emails and phones
-        for email in list(email_to_phones.keys()):
-            phones = conn.execute(
-                text("""
-                    SELECT DISTINCT REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') AS phone
-                    FROM cleaned_data
-                    WHERE upload_id = :uid
-                    AND LOWER(TRIM(row_data->>'_rel_email')) = :email
-                    AND REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != ''
-                """),
-                {"uid": upload_id, "email": email}
-            ).fetchall()
-            
-            for p in phones:
-                if p.phone in phone_counts:  # Only connect if phone is also a duplicate
-                    email_to_phones[email].add(p.phone)
-                    if p.phone not in phone_to_emails:
-                        phone_to_emails[p.phone] = set()
-                    phone_to_emails[p.phone].add(email)
-        
-        # Run Union-Find to merge connected groups
-        visited_emails = set()
-        visited_phones = set()
-        merged_groups = []
-        
-        # Start from emails
-        for email in email_to_phones:
-            if email in visited_emails:
-                continue
-            
-            email_cluster = set()
-            phone_cluster = set()
-            queue = [('email', email)]
-            
-            while queue:
-                typ, val = queue.pop(0)
-                
-                if typ == 'email':
-                    if val in visited_emails:
-                        continue
-                    visited_emails.add(val)
-                    email_cluster.add(val)
-                    
-                    for phone in email_to_phones.get(val, []):
-                        if phone not in visited_phones:
-                            queue.append(('phone', phone))
-                else:
-                    if val in visited_phones:
-                        continue
-                    visited_phones.add(val)
-                    phone_cluster.add(val)
-                    
-                    for em in phone_to_emails.get(val, []):
-                        if em not in visited_emails:
-                            queue.append(('email', em))
-            
-            merged_groups.append((email_cluster, phone_cluster))
-        
-        # Start from unvisited phones
-        for phone in phone_to_emails:
-            if phone in visited_phones:
-                continue
-            
-            email_cluster = set()
-            phone_cluster = set()
-            queue = [('phone', phone)]
-            
-            while queue:
-                typ, val = queue.pop(0)
-                
-                if typ == 'phone':
-                    if val in visited_phones:
-                        continue
-                    visited_phones.add(val)
-                    phone_cluster.add(val)
-                    
-                    for em in phone_to_emails.get(val, []):
-                        if em not in visited_emails:
-                            queue.append(('email', em))
-                else:
-                    if val in visited_emails:
-                        continue
-                    visited_emails.add(val)
-                    email_cluster.add(val)
-                    
-                    for ph in email_to_phones.get(val, []):
-                        if ph not in visited_phones:
-                            queue.append(('phone', ph))
-            
-            merged_groups.append((email_cluster, phone_cluster))
-        
-        # Categorize groups and calculate statistics
-        email_only_groups = 0
-        email_only_records = 0
-        phone_only_groups = 0
-        phone_only_records = 0
-        both_groups = 0
-        both_records = 0
-        
-        for emails, phones in merged_groups:
-            has_emails = len(emails) > 0
-            has_phones = len(phones) > 0
-            
-            if has_emails and has_phones:
-                # Merged group (both email and phone)
-                both_groups += 1
-                # Calculate total records in this merged group
-                all_identifiers = list(emails) + list(phones)
-                record_count = conn.execute(
-                    text("""
-                        SELECT COUNT(DISTINCT id)
-                        FROM cleaned_data
-                        WHERE upload_id = :uid
-                        AND (
-                            LOWER(TRIM(row_data->>'_rel_email')) = ANY(:emails)
-                            OR REGEXP_REPLACE(COALESCE(row_data->>'_rel_phone', ''), '[^0-9]', '', 'g') = ANY(:phones)
-                        )
-                    """),
-                    {"uid": upload_id, "emails": list(emails), "phones": list(phones)}
-                ).scalar()
-                both_records += record_count
-            elif has_emails:
-                # Email-only group
-                email_only_groups += 1
-                for email in emails:
-                    email_only_records += email_counts.get(email, 0)
-            else:
-                # Phone-only group
-                phone_only_groups += 1
-                for phone in phones:
-                    phone_only_records += phone_counts.get(phone, 0)
+        ).fetchone()
     
     return {
-        "email_groups": email_only_groups,
-        "email_records": email_only_records,
-        "phone_groups": phone_only_groups,
-        "phone_records": phone_only_records,
-        "both_groups": both_groups,
-        "both_records": both_records  # ✅ FIXED: Now includes this value
+        "email_groups": stats.email_groups,
+        "email_records": stats.email_records,
+        "phone_groups": stats.phone_groups,
+        "phone_records": stats.phone_records,
+        "both_groups": stats.both_groups,
+        "both_records": stats.both_records
     }
 
 @app.get("/header.html")
@@ -1917,103 +1695,3 @@ def get_header_metadata(
             "first_row_was_data": result.first_row_is_data,
             "header_status": result.header_status
         }
-    
-def infer_semantic_role(column_name: str) -> Optional[str]:
-    """
-    Infer semantic role from user-provided column name.
-    Uses fuzzy matching with separator removal.
-    
-    Returns:
-        'email', 'phone', 'name', or None
-        
-    Examples:
-        "E-mail" → "email"
-        "Phone_No" → "phone"
-        "Contact-Number" → "phone"
-        "Full.Name" → "name"
-    """
-    if not column_name:
-        return None
-    
-    # Remove all common separators for matching
-    normalized = column_name.lower()
-    cleaned = normalized.replace('-', '').replace('_', '').replace(' ', '').replace('.', '')
-    
-    # Email patterns (check most specific first)
-    email_patterns = [
-        'emailaddress', 'emailid', 'email', 'mail'
-    ]
-    for pattern in email_patterns:
-        if pattern in cleaned:
-            return 'email'
-    
-    # Phone patterns (check most specific first)
-    phone_patterns = [
-        'phonenumber', 'phoneno', 'mobilenumber', 'mobileno', 
-        'contactnumber', 'contactno', 'cellnumber', 'cellno',
-        'phone', 'mobile', 'contact', 'cell'
-    ]
-    for pattern in phone_patterns:
-        if pattern in cleaned:
-            return 'phone'
-    
-    # Name patterns
-    name_patterns = [
-        'fullname', 'firstname', 'lastname', 'customername', 
-        'clientname', 'username', 'name'
-    ]
-    for pattern in name_patterns:
-        if pattern in cleaned:
-            return 'name'
-    
-    return None
-
-def build_semantic_roles(user_mapping: Dict[int, str]) -> Dict[int, str]:
-    """
-    Build semantic role mapping from user-provided column names.
-    
-    Args:
-        user_mapping: {column_index: column_name}
-        
-    Returns:
-        {column_index: semantic_role}
-        
-    Example:
-        Input: {0: "Full Name", 2: "E-mail", 5: "Phone_No"}
-        Output: {0: "name", 2: "email", 5: "phone"}
-    """
-    semantic_roles = {}
-    
-    for idx, col_name in user_mapping.items():
-        role = infer_semantic_role(col_name)
-        if role:
-            semantic_roles[idx] = role
-    
-    return semantic_roles
-
-def normalize_column_name(name: str) -> str:
-    """
-    Normalize column name for storage.
-    Converts to lowercase and replaces separators with underscores.
-    
-    Examples:
-        "E-mail" → "e_mail"
-        "Phone No" → "phone_no"
-        "Full.Name" → "full_name"
-    """
-    if not name:
-        return name
-    
-    normalized = name.strip().lower()
-    # Replace all common separators with underscore
-    for sep in ['-', '.', ' ']:
-        normalized = normalized.replace(sep, '_')
-    
-    # Remove consecutive underscores
-    while '__' in normalized:
-        normalized = normalized.replace('__', '_')
-    
-    # Remove leading/trailing underscores
-    normalized = normalized.strip('_')
-    
-    return normalized

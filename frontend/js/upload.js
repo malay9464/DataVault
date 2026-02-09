@@ -3,6 +3,7 @@ const token = localStorage.getItem("access_token");
 if (!token) {
     window.location.href = "/static/login.html";
 }
+
 const urlParams = new URLSearchParams(window.location.search);
 
 let page = parseInt(urlParams.get("page")) || 1;
@@ -14,14 +15,15 @@ let allUploads = [];
 let filteredUploads = [];
 const PAGE_SIZE = 10;
 
-const fileInput = document.getElementById("fileInput"); // Assuming ID based on usage
-const fileName = document.getElementById("fileName");   // Assuming ID based on usage
+// DOM Elements
+const fileInput = document.getElementById("fileInput");
+const fileName = document.getElementById("fileName");
+const uploadBox = document.getElementById("uploadBox");
 const categoryList = document.getElementById("categoryList");
 const categorySelect = document.getElementById("categorySelect");
 const searchInput = document.getElementById("searchInput");
 const uploadTable = document.getElementById("uploadTable");
 const pagination = document.getElementById("pagination");
-const newCategory = document.getElementById("newCategory");
 const allCountSpan = document.getElementById("allCount");
 const uncatCountSpan = document.getElementById("uncatCount");
 const totalMin = document.getElementById("totalMin");
@@ -30,8 +32,61 @@ const dupMin = document.getElementById("dupMin");
 const dupMax = document.getElementById("dupMax");
 const dateFrom = document.getElementById("dateFrom");
 const dateTo = document.getElementById("dateTo");
+const advancedFilters = document.getElementById("advancedFilters");
+const uploadProgress = document.getElementById("uploadProgress");
+const progressFill = document.getElementById("progressFill");
+const progressText = document.getElementById("progressText");
+const emptyState = document.getElementById("emptyState");
+const tableWrapper = document.getElementById("tableWrapper");
+const tableSkeleton = document.getElementById("tableSkeleton");
 
+// ========== KEYBOARD SHORTCUTS ==========
+document.addEventListener("keydown", (e) => {
+    // Ignore if typing in input
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
+        if (e.key === "Escape") {
+            e.target.blur();
+        }
+        return;
+    }
 
+    // "/" - Focus search
+    if (e.key === "/") {
+        e.preventDefault();
+        searchInput.focus();
+    }
+
+    // "n" or "N" - Trigger upload
+    if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        fileInput.click();
+    }
+
+    // "?" - Toggle shortcuts modal
+    if (e.key === "?") {
+        e.preventDefault();
+        toggleShortcuts();
+    }
+
+    // "Escape" - Close modals
+    if (e.key === "Escape") {
+        closeAddUserModal();
+        const shortcutsModal = document.getElementById("shortcutsModal");
+        if (shortcutsModal) shortcutsModal.style.display = "none";
+    }
+});
+
+// ========== SHORTCUTS MODAL ==========
+function toggleShortcuts() {
+    const modal = document.getElementById("shortcutsModal");
+    if (modal.style.display === "none" || !modal.style.display) {
+        modal.style.display = "flex";
+    } else {
+        modal.style.display = "none";
+    }
+}
+
+// ========== AUTH FETCH ==========
 async function authFetch(url, options = {}) {
     const res = await fetch(url, {
         ...options,
@@ -50,14 +105,12 @@ async function authFetch(url, options = {}) {
     return res;
 }
 
-
+// ========== TOAST NOTIFICATIONS ==========
 function showToast(message, type = "success", timeout = 4000) {
-    console.log("TOAST:", message, type); // DEBUG
-
-    let container = document.getElementById("toastContainer");
-
+    const container = document.getElementById("toastContainer");
+    
     if (!container) {
-        alert("Toast container missing!");
+        console.error("Toast container missing!");
         return;
     }
 
@@ -67,15 +120,81 @@ function showToast(message, type = "success", timeout = 4000) {
 
     container.appendChild(toast);
 
-    setTimeout(() => toast.remove(), timeout);
+    setTimeout(() => {
+        toast.style.animation = "toastSlideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+    }, timeout);
 }
 
+// Add toast slide out animation
+const style = document.createElement("style");
+style.textContent = `
+    @keyframes toastSlideOut {
+        to {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+    }
+`;
+document.head.appendChild(style);
 
+// ========== FILE SELECTION ==========
 fileInput.onchange = () => {
     selectedFile = fileInput.files[0];
-    fileName.innerText = selectedFile ? selectedFile.name : "";
+    
+    if (selectedFile) {
+        const fileSize = (selectedFile.size / 1024 / 1024).toFixed(2);
+        const fileType = selectedFile.name.split('.').pop().toUpperCase();
+        
+        fileName.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+                <div style="font-weight: 600; color: #1e40af;">${selectedFile.name}</div>
+                <div style="font-size: 12px; color: #64748b;">
+                    ${fileSize} MB • ${fileType} Format
+                </div>
+            </div>
+        `;
+        fileName.style.display = "flex";
+        
+        // Add visual feedback
+        uploadBox.style.borderColor = "#16a34a";
+        uploadBox.style.background = "#f0fdf4";
+    } else {
+        fileName.innerText = "";
+        fileName.style.display = "none";
+        uploadBox.style.borderColor = "";
+        uploadBox.style.background = "";
+    }
 };
 
+// Drag and drop support
+uploadBox.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadBox.style.borderColor = "#16a34a";
+    uploadBox.style.background = "#f0fdf4";
+    uploadBox.style.transform = "scale(1.02)";
+});
+
+uploadBox.addEventListener("dragleave", () => {
+    uploadBox.style.borderColor = "";
+    uploadBox.style.background = "";
+    uploadBox.style.transform = "";
+});
+
+uploadBox.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadBox.style.borderColor = "";
+    uploadBox.style.background = "";
+    uploadBox.style.transform = "";
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        fileInput.files = files;
+        fileInput.dispatchEvent(new Event("change"));
+    }
+});
+
+// ========== SEARCH PARAMS ==========
 function buildSearchParams() {
     const p = new URLSearchParams();
 
@@ -103,6 +222,17 @@ function buildSearchParams() {
     return p.toString();
 }
 
+// Live search on typing
+let searchTimeout;
+searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        page = 1;
+        loadUploads();
+    }, 300); // Debounce: wait 300ms after user stops typing
+});
+
+// ========== CATEGORIES ==========
 async function addCategoryPrompt() {
     const name = prompt("Enter category name");
     if (!name) return;
@@ -113,32 +243,14 @@ async function addCategoryPrompt() {
     );
 
     if (!res.ok) {
-        alert("Category already exists");
+        showToast("Category already exists", "error");
         return;
     }
 
+    showToast("Category created successfully", "success");
     loadCategories();
 }
 
-function applyAdvancedSearch() {
-    page = 1;
-    loadUploads();
-}
-
-function resetSearch() {
-    searchInput.value = "";
-    totalMin.value = "";
-    totalMax.value = "";
-    dupMin.value = "";
-    dupMax.value = "";
-    dateFrom.value = "";
-    dateTo.value = "";
-
-    page = 1;
-    loadUploads();
-}
-
-/* ---------- CATEGORIES ---------- */
 async function loadCategories() {
     const res = await authFetch("/categories");
     const cats = await res.json();
@@ -166,13 +278,22 @@ async function loadCategories() {
         const div = document.createElement("div");
         div.className = "category";
 
+        // Determine icon based on category name
+        let icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+        </svg>`;
+
         div.innerHTML = `
             <span onclick="applyFilter(${c.id}, this.parentElement)">
-                ${c.name} (${c.uploads})
+                ${icon}
+                ${c.name}
             </span>
-            <span class="cat-actions">
-                <button onclick="renameCategory(${c.id}, '${c.name}')">✎</button>
-                <button onclick="deleteCategory(${c.id})">✖</button>
+            <span style="display: flex; align-items: center; gap: 8px;">
+                <span class="count-badge">${c.uploads}</span>
+                <span class="cat-actions">
+                    <button onclick="event.stopPropagation(); renameCategory(${c.id}, '${c.name}')">✎</button>
+                    <button onclick="event.stopPropagation(); deleteCategory(${c.id})">✖</button>
+                </span>
             </span>
         `;
         categoryList.appendChild(div);
@@ -182,7 +303,15 @@ async function loadCategories() {
     uncatCountSpan.innerText = uncatCount;
 }
 
-/* ---------- FILTER ---------- */
+// ========== FILTERS ==========
+function toggleAdvancedFilters() {
+    if (advancedFilters.style.display === "none" || !advancedFilters.style.display) {
+        advancedFilters.style.display = "grid";
+    } else {
+        advancedFilters.style.display = "none";
+    }
+}
+
 function applyFilter(type, el) {
     currentFilter = type;
     page = 1;
@@ -196,10 +325,26 @@ function applyFilter(type, el) {
     loadUploads();
 }
 
-/* ---------- UPLOAD ---------- */
-async function upload() {
-    console.log("Upload clicked");
+function applyAdvancedSearch() {
+    page = 1;
+    loadUploads();
+}
 
+function resetSearch() {
+    searchInput.value = "";
+    totalMin.value = "";
+    totalMax.value = "";
+    dupMin.value = "";
+    dupMax.value = "";
+    dateFrom.value = "";
+    dateTo.value = "";
+
+    page = 1;
+    loadUploads();
+}
+
+// ========== UPLOAD ==========
+async function upload() {
     if (!selectedFile) {
         showToast("Please select a file", "warn");
         return;
@@ -210,6 +355,16 @@ async function upload() {
 
     btn.disabled = true;
     spinner.style.display = "inline-block";
+    uploadProgress.style.display = "block";
+
+    // Simulate upload progress (replace with actual upload progress if API supports it)
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 90) progress = 90;
+        progressFill.style.width = progress + "%";
+        progressText.textContent = `Uploading... ${Math.round(progress)}%`;
+    }, 200);
 
     try {
         const fd = new FormData();
@@ -220,24 +375,26 @@ async function upload() {
             { method: "POST", body: fd }
         );
 
-        console.log("Upload response status:", res.status);
+        clearInterval(progressInterval);
+        progressFill.style.width = "100%";
+        progressText.textContent = "Processing...";
 
         if (res.status === 409) {
             showToast("File already uploaded", "error");
+            uploadProgress.style.display = "none";
             return;
         }
 
         if (!res.ok) {
             showToast("Upload failed", "error");
+            uploadProgress.style.display = "none";
             return;
         }
 
-        // ========== HANDLE RESPONSE ==========
         const result = await res.json();
 
         // Check if headers need resolution
         if (result.success === false && result.status === 'pending_headers') {
-            // Headers need user review - redirect to resolution page
             showToast("Headers need review. Redirecting...", "warn", 2000);
             
             setTimeout(() => {
@@ -247,42 +404,100 @@ async function upload() {
             return;
         }
 
-        // Normal success case
+        // Success
         if (result.success) {
-            showToast("Upload successful", "success");
+            showToast("Upload successful! ✨", "success");
 
+            // Reset form
             selectedFile = null;
             fileInput.value = "";
             fileName.innerText = "";
+            fileName.style.display = "none";
+            uploadBox.style.borderColor = "";
+            uploadBox.style.background = "";
+            uploadProgress.style.display = "none";
+            progressFill.style.width = "0%";
 
             loadCategories();
             loadUploads();
         }
 
     } catch (err) {
+        clearInterval(progressInterval);
         console.error(err);
         showToast("Network error", "error");
+        uploadProgress.style.display = "none";
     } finally {
         btn.disabled = false;
         spinner.style.display = "none";
     }
 }
 
+// ========== USER MANAGEMENT ==========
 function openAddUserModal() {
     document.getElementById("addUserModal").style.display = "flex";
 }
 
 function closeAddUserModal() {
     document.getElementById("addUserModal").style.display = "none";
+    
+    // Clear form
+    document.getElementById("newUserEmail").value = "";
+    document.getElementById("newUserPassword").value = "";
+    document.querySelector('input[name="userRole"][value="user"]').checked = true;
+    
+    const passwordStrength = document.getElementById("passwordStrength");
+    if (passwordStrength) passwordStrength.style.display = "none";
 }
+
+// Password strength indicator
+document.getElementById("newUserPassword")?.addEventListener("input", (e) => {
+    const password = e.target.value;
+    const strengthEl = document.getElementById("passwordStrength");
+    const fillEl = document.getElementById("strengthFill");
+    const textEl = document.getElementById("strengthText");
+    
+    if (!password) {
+        strengthEl.style.display = "none";
+        return;
+    }
+    
+    strengthEl.style.display = "block";
+    
+    let strength = 0;
+    let label = "";
+    let color = "";
+    
+    if (password.length >= 8) strength += 25;
+    if (password.length >= 12) strength += 25;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
+    if (/[0-9]/.test(password)) strength += 12;
+    if (/[^a-zA-Z0-9]/.test(password)) strength += 13;
+    
+    if (strength < 40) {
+        label = "Weak";
+        color = "#dc2626";
+    } else if (strength < 70) {
+        label = "Medium";
+        color = "#f59e0b";
+    } else {
+        label = "Strong";
+        color = "#16a34a";
+    }
+    
+    fillEl.style.width = strength + "%";
+    fillEl.style.background = color;
+    textEl.textContent = label;
+    textEl.style.color = color;
+});
 
 async function createUser() {
     const email = document.getElementById("newUserEmail").value.trim();
     const password = document.getElementById("newUserPassword").value.trim();
-    const role = document.getElementById("newUserRole").value;
+    const role = document.querySelector('input[name="userRole"]:checked').value;
 
     if (!email || !password) {
-        alert("Email and password required");
+        showToast("Email and password required", "error");
         return;
     }
 
@@ -293,18 +508,15 @@ async function createUser() {
 
     if (!res.ok) {
         const err = await res.json();
-        alert(err.detail || "Failed to create user");
+        showToast(err.detail || "Failed to create user", "error");
         return;
     }
 
     closeAddUserModal();
-    alert("User added successfully");
-
-    document.getElementById("newUserEmail").value = "";
-    document.getElementById("newUserPassword").value = "";
+    showToast("User added successfully ✓", "success");
 }
 
-
+// ========== USER INFO ==========
 async function loadUser() {
     const res = await authFetch("/me");
     if (!res.ok) {
@@ -329,11 +541,15 @@ async function loadUser() {
     }
 }
 
-/* ---------- LOAD UPLOADS ---------- */
+// ========== LOAD UPLOADS ==========
 async function loadUploads() {
+    // Show skeleton
+    tableSkeleton.style.display = "block";
+    tableWrapper.style.display = "none";
+    emptyState.style.display = "none";
+    
     let url = "";
 
-    // ---------- DECIDE DATA SOURCE ----------
     if (currentFilter === "mine") {
         url = "/my-uploads";
     } else {
@@ -350,7 +566,6 @@ async function loadUploads() {
             params.append("category_id", currentFilter);
         }
 
-        // Advanced search params
         const adv = buildSearchParams();
         if (adv) {
             adv.split("&").forEach(p => {
@@ -364,31 +579,47 @@ async function loadUploads() {
         }
     }
 
-    // ---------- FETCH ----------
-    const res = await authFetch(url);
+    try {
+        const res = await authFetch(url);
 
-    if (!res.ok) {
-        alert("Failed to load uploads");
-        return;
+        if (!res.ok) {
+            showToast("Failed to load uploads", "error");
+            return;
+        }
+
+        allUploads = await res.json();
+        filteredUploads = [...allUploads];
+        
+        // Hide skeleton, show table
+        tableSkeleton.style.display = "none";
+        
+        if (filteredUploads.length === 0) {
+            emptyState.style.display = "block";
+            tableWrapper.style.display = "none";
+        } else {
+            emptyState.style.display = "none";
+            tableWrapper.style.display = "block";
+            renderTable();
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Network error", "error");
+        tableSkeleton.style.display = "none";
     }
-
-    allUploads = await res.json();
-    filteredUploads = [...allUploads];
-    renderTable();
 }
 
-/* ---------- TABLE + PAGINATION ---------- */
+// ========== RENDER TABLE ==========
 function renderTable() {
     const totalPages = Math.ceil(filteredUploads.length / PAGE_SIZE);
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
 
-    /* ---------- TABLE HEADER ---------- */
     let header = `
+        <thead>
         <tr>
             <th>File</th>
             <th>Category</th>
-            <th>Total</th>
+            <th>Total Records</th>
             <th>Duplicates</th>
     `;
 
@@ -396,22 +627,48 @@ function renderTable() {
         header += `<th>Uploaded By</th>`;
     }
 
-    header += `<th>Actions</th></tr>`;
+    header += `<th>Status</th><th>Actions</th></tr></thead><tbody>`;
     uploadTable.innerHTML = header;
 
-    /* ---------- TABLE ROWS ---------- */
     data.forEach(r => {
+        // Calculate duplicate percentage
+        const dupPercentage = r.total_records > 0 
+            ? (r.duplicate_records / r.total_records * 100).toFixed(1)
+            : 0;
+        
+        // Determine status
+        let statusClass = "status-clean";
+        let statusText = "Clean";
+        
+        if (dupPercentage > 20) {
+            statusClass = "status-warning";
+            statusText = `${dupPercentage}% Dup`;
+        } else if (dupPercentage > 0) {
+            statusText = `${dupPercentage}% Dup`;
+        }
+
         let row = `
             <tr>
-                <td>${r.filename}</td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 18px;">📄</span>
+                        <strong>${r.filename}</strong>
+                    </div>
+                </td>
                 <td>${r.category}</td>
-                <td>${r.total_records}</td>
-                <td>${r.duplicate_records}</td>
+                <td>${r.total_records.toLocaleString()}</td>
+                <td>${r.duplicate_records.toLocaleString()}</td>
         `;
 
         if (currentUser.role === "admin") {
             row += `<td>${r.uploaded_by}</td>`;
         }
+
+        row += `
+                <td>
+                    <span class="status-indicator ${statusClass}">${statusText}</span>
+                </td>
+        `;
 
         const canDelete =
             currentUser.role === "admin" ||
@@ -437,9 +694,11 @@ function renderTable() {
         uploadTable.innerHTML += row;
     });
 
+    uploadTable.innerHTML += `</tbody>`;
     renderPagination(totalPages);
 }
 
+// ========== PAGINATION ==========
 function renderPagination(totalPages) {
     pagination.innerHTML = "";
     if (totalPages <= 1) return;
@@ -449,8 +708,9 @@ function renderPagination(totalPages) {
     prev.disabled = page === 1;
     prev.onclick = () => {
         page--;
-        updaateURL();
+        updateURL();
         renderTable();
+        window.scrollTo({ top: 0, behavior: "smooth" });
     };
     pagination.appendChild(prev);
 
@@ -458,11 +718,11 @@ function renderPagination(totalPages) {
     let end = Math.min(totalPages, page + 2);
 
     if (start > 1) addPage(1);
-    if (start > 2) pagination.append("...");
+    if (start > 2) pagination.append(document.createTextNode("..."));
 
     for (let i = start; i <= end; i++) addPage(i);
 
-    if (end < totalPages - 1) pagination.append("...");
+    if (end < totalPages - 1) pagination.append(document.createTextNode("..."));
     if (end < totalPages) addPage(totalPages);
 
     const next = document.createElement("button");
@@ -472,6 +732,7 @@ function renderPagination(totalPages) {
         page++;
         updateURL();
         renderTable();
+        window.scrollTo({ top: 0, behavior: "smooth" });
     };
     pagination.appendChild(next);
 }
@@ -484,75 +745,81 @@ function addPage(n) {
         page = n;
         updateURL();
         renderTable();
+        window.scrollTo({ top: 0, behavior: "smooth" });
     };
     pagination.appendChild(b);
 }
 
+// ========== CATEGORY MANAGEMENT ==========
 async function renameCategory(id, oldName) {
     const name = prompt("Rename category", oldName);
     if (!name) return;
-    await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, {
+    
+    const res = await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, {
         method: "PUT"
     });
-    loadCategories();
-    loadUploads();
+    
+    if (res.ok) {
+        showToast("Category renamed successfully", "success");
+        loadCategories();
+        loadUploads();
+    } else {
+        showToast("Failed to rename category", "error");
+    }
 }
 
 async function deleteCategory(id) {
-    if (!confirm("Delete category?")) return;
+    if (!confirm("Delete this category? Uploads will be moved to Uncategorized.")) return;
+    
     const res = await authFetch(`/categories/${id}`, {
         method: "DELETE"
     });
-    if (!res.ok) alert("Category has uploads");
-    loadCategories();
-    loadUploads();
+    
+    if (!res.ok) {
+        showToast("Cannot delete - category has uploads", "error");
+    } else {
+        showToast("Category deleted successfully", "success");
+        loadCategories();
+        loadUploads();
+    }
 }
 
-/* ---------- DELETE UPLOAD ---------- */
+// ========== DELETE UPLOAD ==========
 async function del(uid) {
-    if (!confirm("Delete this upload?")) return;
-    await authFetch(`/upload/${uid}`, {
+    if (!confirm("Delete this upload? This action cannot be undone.")) return;
+    
+    const res = await authFetch(`/upload/${uid}`, {
         method: "DELETE"
     });
-    loadCategories();
-    loadUploads();
+    
+    if (res.ok) {
+        showToast("Upload deleted successfully", "success");
+        loadCategories();
+        loadUploads();
+    } else {
+        showToast("Failed to delete upload", "error");
+    }
 }
 
+// ========== LOGOUT ==========
 function logout() {
     localStorage.removeItem("access_token");
     window.location.href = "/static/login.html";
 }
 
+// ========== URL STATE ==========
+function updateURL() {
+    const params = new URLSearchParams();
+    params.set("page", page);
+    params.set("filter", currentFilter);
+    history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+}
+
+// ========== INIT ==========
 async function initPage() {
-    await loadUser();        // sets currentUser
-    await loadCategories();  // fills categoriesCache
-    await loadUploads();     // now SAFE
+    await loadUser();
+    await loadCategories();
+    await loadUploads();
 }
 
 initPage();
-
-async function resetPasswordPrompt(userId, email) {
-    const pwd = prompt(`Enter new password for ${email}`);
-    if (!pwd) return;
-
-    const res = await authFetch(
-        `/admin/users/${userId}/reset-password?new_password=${encodeURIComponent(pwd)}`,
-        { method: "POST" }
-    );
-
-    if (!res.ok) {
-        alert("Failed to reset password");
-        return;
-    }
-
-    alert("Password reset successfully");
-}
-
-function updateURL() {
-    const params = new URLSearchParams();
-
-    params.set("page", page);
-    params.set("filter", currentFilter);
-
-    history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
-}

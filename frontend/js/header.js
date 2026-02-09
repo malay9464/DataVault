@@ -1,6 +1,3 @@
-/* ===============================
-   AUTHENTICATION
-   =============================== */
 const token = localStorage.getItem('access_token');
 
 if (!token) {
@@ -25,17 +22,11 @@ async function authFetch(url, options = {}) {
     return res;
 }
 
-/* ===============================
-   GLOBAL STATE
-   =============================== */
 const uploadId = new URLSearchParams(window.location.search).get('upload_id');
 let headerInfo = null;
 let caseType = null;
 let columnWidths = {}; // Store custom column widths
 
-/* ===============================
-   SMART DEFAULT WIDTHS
-   =============================== */
 function getDefaultWidth(columnName) {
     const col = columnName.toLowerCase();
     
@@ -52,9 +43,6 @@ function getDefaultWidth(columnName) {
     return 150; // Default
 }
 
-/* ===============================
-   LOAD HEADER DATA
-   =============================== */
 async function loadHeaders() {
     try {
         const response = await authFetch(`/upload/${uploadId}/headers`);
@@ -238,9 +226,6 @@ function renderHeaderUI() {
     attachResizeHandlers();
 }
 
-/* ===============================
-   INPUT TRACKING (modified state)
-   =============================== */
 function attachInputListeners() {
     const inputs = document.querySelectorAll('input[id^="col_"]');
     
@@ -257,10 +242,6 @@ function attachInputListeners() {
     });
 }
 
-/* ===============================
-   COLUMN RESIZE FUNCTIONALITY
-   (Reused from preview.js)
-   =============================== */
 function attachResizeHandlers() {
     const table = document.getElementById('headerTable');
     const handles = table.querySelectorAll('.resize-handle');
@@ -326,9 +307,6 @@ function attachResizeHandlers() {
     });
 }
 
-/* ===============================
-   SUBMIT RESOLUTION
-   =============================== */
 async function submitResolution() {
     const submitBtn = document.getElementById('submitBtn');
     const cancelBtn = document.getElementById('cancelBtn');
@@ -398,9 +376,6 @@ async function submitResolution() {
     }
 }
 
-/* ===============================
-   CANCEL RESOLUTION
-   =============================== */
 function cancelResolution() {
     if (confirm('Are you sure you want to cancel? The upload will be deleted.')) {
         // TODO: Call delete endpoint if available
@@ -408,9 +383,6 @@ function cancelResolution() {
     }
 }
 
-/* ===============================
-   ALERT DISPLAY
-   =============================== */
 function showAlert(type, message) {
     const alertContainer = document.getElementById('alertContainer');
     
@@ -435,9 +407,6 @@ function showAlert(type, message) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-/* ===============================
-   INITIALIZATION
-   =============================== */
 if (!uploadId) {
     showAlert('error', 'No upload ID provided');
 } else {

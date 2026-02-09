@@ -155,6 +155,12 @@ def infer_semantic_role(column_name: str) -> Optional[str]:
     
     Returns:
         'email', 'phone', 'name', or None
+        
+    Examples:
+        "E-mail" → "email"
+        "Phone_No" → "phone"
+        "Contact-Number" → "phone"
+        "Full.Name" → "name"
     """
     if not column_name:
         return None
@@ -165,10 +171,11 @@ def infer_semantic_role(column_name: str) -> Optional[str]:
     
     # Email patterns (check most specific first)
     email_patterns = [
-        'emailaddress', 'emailid', 'email', 'mail', 'e-mail', 'e_mail'
+        'emailaddress', 'emailid', 'email', 'mail'
     ]
-    if any(pattern in cleaned for pattern in email_patterns):
-        return 'email'
+    for pattern in email_patterns:
+        if pattern in cleaned:
+            return 'email'
     
     # Phone patterns (check most specific first)
     phone_patterns = [
@@ -176,16 +183,18 @@ def infer_semantic_role(column_name: str) -> Optional[str]:
         'contactnumber', 'contactno', 'cellnumber', 'cellno',
         'phone', 'mobile', 'contact', 'cell'
     ]
-    if any(pattern in cleaned for pattern in phone_patterns):
-        return 'phone'
+    for pattern in phone_patterns:
+        if pattern in cleaned:
+            return 'phone'
     
     # Name patterns
     name_patterns = [
         'fullname', 'firstname', 'lastname', 'customername', 
         'clientname', 'username', 'name'
     ]
-    if any(pattern in cleaned for pattern in name_patterns):
-        return 'name'
+    for pattern in name_patterns:
+        if pattern in cleaned:
+            return 'name'
     
     return None
 

@@ -94,12 +94,12 @@ async function loadStats() {
 
         const stats = await res.json();
 
-        document.getElementById("statDuplicateEmails").innerText = stats.email_groups;
-        document.getElementById("statEmailRecords").innerText = stats.email_records;
-        document.getElementById("statDuplicatePhones").innerText = stats.phone_groups;
-        document.getElementById("statPhoneRecords").innerText = stats.phone_records;
-        document.getElementById("statBoth").innerText = stats.both_groups;
-        document.getElementById("statBothRecords").innerText = stats.both_records;
+        document.getElementById("statDuplicateEmails").innerText = stats.email_records;
+        document.getElementById("statEmailRecords").innerText = `${stats.email_groups} groups`;
+        document.getElementById("statDuplicatePhones").innerText = stats.phone_records;
+        document.getElementById("statPhoneRecords").innerText = `${stats.phone_groups} groups`;
+        document.getElementById("statBoth").innerText = stats.both_records;
+        document.getElementById("statBothRecords").innerText = `${stats.both_groups} groups`;
 
     } catch (err) {
         console.error("Stats load failed:", err);
