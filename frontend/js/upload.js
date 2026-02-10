@@ -40,9 +40,7 @@ const emptyState = document.getElementById("emptyState");
 const tableWrapper = document.getElementById("tableWrapper");
 const tableSkeleton = document.getElementById("tableSkeleton");
 
-// ========== KEYBOARD SHORTCUTS ==========
 document.addEventListener("keydown", (e) => {
-    // Ignore if typing in input
     if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
         if (e.key === "Escape") {
             e.target.blur();
@@ -50,25 +48,21 @@ document.addEventListener("keydown", (e) => {
         return;
     }
 
-    // "/" - Focus search
     if (e.key === "/") {
         e.preventDefault();
         searchInput.focus();
     }
 
-    // "n" or "N" - Trigger upload
     if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         fileInput.click();
     }
 
-    // "?" - Toggle shortcuts modal
     if (e.key === "?") {
         e.preventDefault();
         toggleShortcuts();
     }
 
-    // "Escape" - Close modals
     if (e.key === "Escape") {
         closeAddUserModal();
         const shortcutsModal = document.getElementById("shortcutsModal");
@@ -76,7 +70,6 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-// ========== SHORTCUTS MODAL ==========
 function toggleShortcuts() {
     const modal = document.getElementById("shortcutsModal");
     if (modal.style.display === "none" || !modal.style.display) {
@@ -86,7 +79,6 @@ function toggleShortcuts() {
     }
 }
 
-// ========== AUTH FETCH ==========
 async function authFetch(url, options = {}) {
     const res = await fetch(url, {
         ...options,
@@ -105,10 +97,9 @@ async function authFetch(url, options = {}) {
     return res;
 }
 
-// ========== TOAST NOTIFICATIONS ==========
 function showToast(message, type = "success", timeout = 4000) {
     const container = document.getElementById("toastContainer");
-    
+
     if (!container) {
         console.error("Toast container missing!");
         return;
@@ -126,7 +117,6 @@ function showToast(message, type = "success", timeout = 4000) {
     }, timeout);
 }
 
-// Add toast slide out animation
 const style = document.createElement("style");
 style.textContent = `
     @keyframes toastSlideOut {
@@ -138,14 +128,20 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// ========== FILE SELECTION ==========
+function checkUploadReady() {
+    const hasFile = !!selectedFile;
+    const hasCategory = !!categorySelect.value;
+    const btn = document.getElementById("uploadBtn");
+    btn.disabled = !(hasFile && hasCategory);
+}
+
 fileInput.onchange = () => {
     selectedFile = fileInput.files[0];
-    
+
     if (selectedFile) {
         const fileSize = (selectedFile.size / 1024 / 1024).toFixed(2);
         const fileType = selectedFile.name.split('.').pop().toUpperCase();
-        
+
         fileName.innerHTML = `
             <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
                 <div style="font-weight: 600; color: #1e40af;">${selectedFile.name}</div>
@@ -155,8 +151,7 @@ fileInput.onchange = () => {
             </div>
         `;
         fileName.style.display = "flex";
-        
-        // Add visual feedback
+
         uploadBox.style.borderColor = "#16a34a";
         uploadBox.style.background = "#f0fdf4";
     } else {
@@ -165,9 +160,14 @@ fileInput.onchange = () => {
         uploadBox.style.borderColor = "";
         uploadBox.style.background = "";
     }
+
+    checkUploadReady();
 };
 
-// Drag and drop support
+categorySelect.addEventListener("change", () => {
+    checkUploadReady();
+});
+
 uploadBox.addEventListener("dragover", (e) => {
     e.preventDefault();
     uploadBox.style.borderColor = "#16a34a";
@@ -186,7 +186,7 @@ uploadBox.addEventListener("drop", (e) => {
     uploadBox.style.borderColor = "";
     uploadBox.style.background = "";
     uploadBox.style.transform = "";
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         fileInput.files = files;
@@ -194,7 +194,6 @@ uploadBox.addEventListener("drop", (e) => {
     }
 });
 
-// ========== SEARCH PARAMS ==========
 function buildSearchParams() {
     const p = new URLSearchParams();
 
@@ -222,17 +221,15 @@ function buildSearchParams() {
     return p.toString();
 }
 
-// Live search on typing
 let searchTimeout;
 searchInput.addEventListener("input", () => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
         page = 1;
         loadUploads();
-    }, 300); // Debounce: wait 300ms after user stops typing
+    }, 300);
 });
 
-// ========== CATEGORIES ==========
 async function addCategoryPrompt() {
     const name = prompt("Enter category name");
     if (!name) return;
@@ -257,7 +254,8 @@ async function loadCategories() {
     categoriesCache = cats;
 
     categoryList.innerHTML = "";
-    categorySelect.innerHTML = "";
+
+    categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
 
     let allCount = 0;
     let uncatCount = 0;
@@ -278,7 +276,6 @@ async function loadCategories() {
         const div = document.createElement("div");
         div.className = "category";
 
-        // Determine icon based on category name
         let icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
         </svg>`;
@@ -298,12 +295,13 @@ async function loadCategories() {
         `;
         categoryList.appendChild(div);
     });
-                   
+
     allCountSpan.innerText = allCount;
     uncatCountSpan.innerText = uncatCount;
+
+    checkUploadReady();
 }
 
-// ========== FILTERS ==========
 function toggleAdvancedFilters() {
     if (advancedFilters.style.display === "none" || !advancedFilters.style.display) {
         advancedFilters.style.display = "grid";
@@ -317,7 +315,7 @@ function applyFilter(type, el) {
     page = 1;
     updateURL();
     searchInput.value = "";
-               
+
     document.querySelectorAll(".category")
         .forEach(c => c.classList.remove("active"));
     el.classList.add("active");
@@ -343,10 +341,14 @@ function resetSearch() {
     loadUploads();
 }
 
-// ========== UPLOAD ==========
 async function upload() {
     if (!selectedFile) {
         showToast("Please select a file", "warn");
+        return;
+    }
+
+    if (!categorySelect.value) {
+        showToast("Please select a category", "warn");
         return;
     }
 
@@ -357,7 +359,9 @@ async function upload() {
     spinner.style.display = "inline-block";
     uploadProgress.style.display = "block";
 
-    // Simulate upload progress (replace with actual upload progress if API supports it)
+    fileInput.disabled = true;
+    uploadBox.classList.add("disabled");
+
     let progress = 0;
     const progressInterval = setInterval(() => {
         progress += Math.random() * 15;
@@ -393,22 +397,17 @@ async function upload() {
 
         const result = await res.json();
 
-        // Check if headers need resolution
         if (result.success === false && result.status === 'pending_headers') {
             showToast("Headers need review. Redirecting...", "warn", 2000);
-            
             setTimeout(() => {
                 window.location.href = `/header.html?upload_id=${result.upload_id}`;
             }, 2000);
-            
             return;
         }
 
-        // Success
         if (result.success) {
             showToast("Upload successful! ✨", "success");
 
-            // Reset form
             selectedFile = null;
             fileInput.value = "";
             fileName.innerText = "";
@@ -428,8 +427,12 @@ async function upload() {
         showToast("Network error", "error");
         uploadProgress.style.display = "none";
     } finally {
-        btn.disabled = false;
         spinner.style.display = "none";
+
+        fileInput.disabled = false;
+        uploadBox.classList.remove("disabled");
+
+        checkUploadReady();
     }
 }
 
@@ -440,40 +443,38 @@ function openAddUserModal() {
 
 function closeAddUserModal() {
     document.getElementById("addUserModal").style.display = "none";
-    
-    // Clear form
+
     document.getElementById("newUserEmail").value = "";
     document.getElementById("newUserPassword").value = "";
     document.querySelector('input[name="userRole"][value="user"]').checked = true;
-    
+
     const passwordStrength = document.getElementById("passwordStrength");
     if (passwordStrength) passwordStrength.style.display = "none";
 }
 
-// Password strength indicator
 document.getElementById("newUserPassword")?.addEventListener("input", (e) => {
     const password = e.target.value;
     const strengthEl = document.getElementById("passwordStrength");
     const fillEl = document.getElementById("strengthFill");
     const textEl = document.getElementById("strengthText");
-    
+
     if (!password) {
         strengthEl.style.display = "none";
         return;
     }
-    
+
     strengthEl.style.display = "block";
-    
+
     let strength = 0;
     let label = "";
     let color = "";
-    
+
     if (password.length >= 8) strength += 25;
     if (password.length >= 12) strength += 25;
     if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
     if (/[0-9]/.test(password)) strength += 12;
     if (/[^a-zA-Z0-9]/.test(password)) strength += 13;
-    
+
     if (strength < 40) {
         label = "Weak";
         color = "#dc2626";
@@ -484,7 +485,7 @@ document.getElementById("newUserPassword")?.addEventListener("input", (e) => {
         label = "Strong";
         color = "#16a34a";
     }
-    
+
     fillEl.style.width = strength + "%";
     fillEl.style.background = color;
     textEl.textContent = label;
@@ -516,7 +517,6 @@ async function createUser() {
     showToast("User added successfully ✓", "success");
 }
 
-// ========== USER INFO ==========
 async function loadUser() {
     const res = await authFetch("/me");
     if (!res.ok) {
@@ -541,15 +541,13 @@ async function loadUser() {
     }
 }
 
-// ========== LOAD UPLOADS ==========
 async function loadUploads(showSkeleton = false) {
-    // Only show skeleton on initial load, not on search/filter
     if (showSkeleton) {
         tableSkeleton.style.display = "block";
         tableWrapper.style.display = "none";
         emptyState.style.display = "none";
     }
-    
+
     let url = "";
 
     if (currentFilter === "mine") {
@@ -563,7 +561,7 @@ async function loadUploads(showSkeleton = false) {
                 c => c.name.toLowerCase() === "uncategorized"
             );
             if (u) params.append("category_id", u.id);
-        } 
+        }
         else if (currentFilter !== "all") {
             params.append("category_id", currentFilter);
         }
@@ -591,10 +589,9 @@ async function loadUploads(showSkeleton = false) {
 
         allUploads = await res.json();
         filteredUploads = [...allUploads];
-        
-        // Hide skeleton, show table
+
         tableSkeleton.style.display = "none";
-        
+
         if (filteredUploads.length === 0) {
             emptyState.style.display = "block";
             tableWrapper.style.display = "none";
@@ -610,7 +607,6 @@ async function loadUploads(showSkeleton = false) {
     }
 }
 
-// ========== RENDER TABLE ==========
 function renderTable() {
     const totalPages = Math.ceil(filteredUploads.length / PAGE_SIZE);
     const start = (page - 1) * PAGE_SIZE;
@@ -633,15 +629,13 @@ function renderTable() {
     uploadTable.innerHTML = header;
 
     data.forEach(r => {
-        // Calculate duplicate percentage
-        const dupPercentage = r.total_records > 0 
+        const dupPercentage = r.total_records > 0
             ? (r.duplicate_records / r.total_records * 100).toFixed(1)
             : 0;
-        
-        // Determine status
+
         let statusClass = "status-clean";
         let statusText = "Clean";
-        
+
         if (dupPercentage > 20) {
             statusClass = "status-warning";
             statusText = `${dupPercentage}% Dup`;
@@ -700,7 +694,6 @@ function renderTable() {
     renderPagination(totalPages);
 }
 
-// ========== PAGINATION ==========
 function renderPagination(totalPages) {
     pagination.innerHTML = "";
     if (totalPages <= 1) return;
@@ -752,15 +745,14 @@ function addPage(n) {
     pagination.appendChild(b);
 }
 
-// ========== CATEGORY MANAGEMENT ==========
 async function renameCategory(id, oldName) {
     const name = prompt("Rename category", oldName);
     if (!name) return;
-    
+
     const res = await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, {
         method: "PUT"
     });
-    
+
     if (res.ok) {
         showToast("Category renamed successfully", "success");
         loadCategories();
@@ -772,11 +764,11 @@ async function renameCategory(id, oldName) {
 
 async function deleteCategory(id) {
     if (!confirm("Delete this category? Uploads will be moved to Uncategorized.")) return;
-    
+
     const res = await authFetch(`/categories/${id}`, {
         method: "DELETE"
     });
-    
+
     if (!res.ok) {
         showToast("Cannot delete - category has uploads", "error");
     } else {
@@ -786,14 +778,13 @@ async function deleteCategory(id) {
     }
 }
 
-// ========== DELETE UPLOAD ==========
 async function del(uid) {
     if (!confirm("Delete this upload? This action cannot be undone.")) return;
-    
+
     const res = await authFetch(`/upload/${uid}`, {
         method: "DELETE"
     });
-    
+
     if (res.ok) {
         showToast("Upload deleted successfully", "success");
         loadCategories();
@@ -803,13 +794,11 @@ async function del(uid) {
     }
 }
 
-// ========== LOGOUT ==========
 function logout() {
     localStorage.removeItem("access_token");
     window.location.href = "/static/login.html";
 }
 
-// ========== URL STATE ==========
 function updateURL() {
     const params = new URLSearchParams();
     params.set("page", page);
@@ -817,11 +806,11 @@ function updateURL() {
     history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
 }
 
-// ========== INIT ==========
 async function initPage() {
     await loadUser();
     await loadCategories();
-    await loadUploads(true); // Show skeleton only on initial load
+    await loadUploads(true);
+    checkUploadReady();
 }
 
 initPage();

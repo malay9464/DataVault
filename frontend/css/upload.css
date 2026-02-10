@@ -1321,3 +1321,9 @@ td:not(:first-child) {
         grid-template-columns: 1fr;
     }
 }
+
+.upload-box.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
