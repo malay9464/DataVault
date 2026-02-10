@@ -36,15 +36,14 @@ let currentView = 'grouped';
 let isSearchMode = false;
 let currentFilter = 'all';
 let currentSort = 'size-desc';
-let cachedGroups = [];
+
+// ❌ REMOVED: cachedGroups — no longer needed, sorting is done by backend
 
 /* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
 function orderColumns(columns) {
     const priority = ["name", "email", "phone"];
-    
     const priorityColumns = priority.filter(col => columns.includes(col));
     const remainingColumns = columns.filter(col => !priority.includes(col));
-    
     return [...priorityColumns, ...remainingColumns];
 }
 
@@ -52,17 +51,13 @@ function orderColumns(columns) {
 async function loadFileMetadata() {
     try {
         const res = await authFetch(`/upload-metadata?upload_id=${uploadId}`);
-        
         if (!res.ok) {
             console.error("Failed to load file metadata");
             return;
         }
-        
         const metadata = await res.json();
-        
         document.getElementById("fileName").textContent = metadata.filename;
         document.getElementById("fileContext").style.display = "block";
-        
     } catch (err) {
         console.error("Error loading file metadata:", err);
     }
@@ -86,73 +81,54 @@ function showLoading() {
 // ---------------- LOAD STATISTICS ----------------
 async function loadStats() {
     try {
-        const res = await authFetch(
-            `/related-grouped-stats?upload_id=${uploadId}`
-        );
-
+        const res = await authFetch(`/related-grouped-stats?upload_id=${uploadId}`);
         if (!res.ok) throw new Error("Failed to load grouped stats");
-
         const stats = await res.json();
-
         document.getElementById("statDuplicateEmails").innerText = stats.email_records;
         document.getElementById("statEmailRecords").innerText = `${stats.email_groups} groups`;
         document.getElementById("statDuplicatePhones").innerText = stats.phone_records;
         document.getElementById("statPhoneRecords").innerText = `${stats.phone_groups} groups`;
         document.getElementById("statBoth").innerText = stats.both_records;
         document.getElementById("statBothRecords").innerText = `${stats.both_groups} groups`;
-
     } catch (err) {
         console.error("Stats load failed:", err);
     }
 }
 
 // ---------------- LOAD GROUPED VIEW ----------------
+// ✅ Now passes `sort` param to backend — sorting happens before pagination
 async function loadGroupedView() {
     showLoading();
-    
+
     try {
         const res = await authFetch(
-            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=${pageSize}&match_type=${currentFilter}`
+            `/related-grouped?upload_id=${uploadId}&page=${currentPage}&page_size=${pageSize}&match_type=${currentFilter}&sort=${currentSort}`
         );
-        
+
         if (!res.ok) throw new Error("Failed to load grouped data");
-        
+
         const data = await res.json();
-        
-        // Cache groups for client-side sorting
-        cachedGroups = data.groups;
-        
-        // Apply sorting
-        applySorting();
-        
-        renderGroupedView({ ...data, groups: cachedGroups });
+
+        // ❌ REMOVED: cachedGroups caching and applySorting() call
+        // Backend already returns groups in the correct sorted order
+
+        renderGroupedView(data);
         renderPagination(data.total_groups, data.page, data.page_size);
-        
+
     } catch (err) {
         console.error(err);
         alert("Failed to load grouped records");
     }
 }
 
-function applySorting() {
-    if (currentSort === 'size-desc') {
-        cachedGroups.sort((a, b) => b.record_count - a.record_count);
-    } else if (currentSort === 'size-asc') {
-        cachedGroups.sort((a, b) => a.record_count - b.record_count);
-    } else if (currentSort === 'alpha') {
-        cachedGroups.sort((a, b) => {
-            const idA = getPrimaryIdentifier(a).toLowerCase();
-            const idB = getPrimaryIdentifier(b).toLowerCase();
-            return idA.localeCompare(idB);
-        });
-    }
-}
+// ❌ REMOVED: applySorting() function — no longer needed
 
+// ✅ Sort change now resets to page 1 and fetches fresh sorted data from backend
 function handleSortChange() {
     if (isSearchMode) return;
     currentSort = document.getElementById("sortBy").value;
-    applySorting();
-    renderGroupedView({ groups: cachedGroups, page: currentPage, page_size: pageSize, total_groups: cachedGroups.length });
+    currentPage = 1;
+    loadGroupedView();
 }
 
 // ---------------- FILTER FUNCTION ----------------
@@ -160,24 +136,21 @@ function filterByType(filterType) {
     if (isSearchMode) return;
     currentFilter = filterType;
     currentPage = 1;
-    
+
     document.getElementById("btnFilterAll").classList.toggle("active", filterType === 'all');
     document.getElementById("btnFilterEmail").classList.toggle("active", filterType === 'email');
     document.getElementById("btnFilterPhone").classList.toggle("active", filterType === 'phone');
     document.getElementById("btnFilterBoth").classList.toggle("active", filterType === 'both');
-    
+
     loadGroupedView();
 }
 
 function getPrimaryIdentifier(group) {
     if (!group.match_key) return "Unknown";
-
     const parts = group.match_key.split("|").map(p => p.trim());
-
     if (group.match_type === "phone") {
         return parts.find(p => /\d/.test(p)) || parts[0];
     }
-
     return parts.find(p => p.includes("@")) || parts[0];
 }
 
@@ -196,48 +169,38 @@ function getSeverityClass(count) {
 
 function getPreviewData(records) {
     if (!records || records.length === 0) return null;
-    
     const firstRecord = records[0].data;
     const preview = {};
-    
-    // Get name
     if (firstRecord.name) preview.name = firstRecord.name;
-    
-    // Get email
     if (firstRecord.email) preview.email = firstRecord.email;
-    
-    // Get phone
     if (firstRecord.phone) preview.phone = firstRecord.phone;
-    
     const standardFields = ['name', 'email', 'phone'];
     const otherFields = Object.keys(firstRecord).filter(k => !standardFields.includes(k));
-    
     for (let field of otherFields) {
         if (firstRecord[field] && firstRecord[field] !== '-' && firstRecord[field] !== null) {
             preview.extra = { field, value: firstRecord[field] };
             break;
         }
     }
-    
     return preview;
 }
 
 function renderGroupedView(data) {
     const container = document.getElementById('resultsContainer');
-    
+
     if (!data.groups || data.groups.length === 0) {
         container.innerHTML = '<div class="no-results">No related records found for this filter</div>';
         return;
     }
-    
+
     let html = '';
-    
+
     data.groups.forEach((group, index) => {
         const groupId = `group-${data.page}-${index}`;
         const recordCount = group.records.length;
         const matchIcon = getMatchTypeIcon(group.match_type);
         const preview = getPreviewData(group.records);
-        
+
         html += `
             <div class="group-container ${group.match_type}">
                 <div class="group-header" onclick="toggleGroup('${groupId}')">
@@ -284,7 +247,7 @@ function renderGroupedView(data) {
             </div>
         `;
     });
-    
+
     container.innerHTML = html;
     container.querySelectorAll('.group-table-scroll')
         .forEach(scroll => attachGroupResizeHandlers(scroll));
@@ -293,7 +256,6 @@ function renderGroupedView(data) {
 function toggleGroup(groupId) {
     const recordsDiv = document.getElementById(`records-${groupId}`);
     const expandIcon = document.getElementById(`expand-${groupId}`);
-    
     recordsDiv.classList.toggle('collapsed');
     expandIcon.classList.toggle('collapsed');
 }
@@ -301,9 +263,8 @@ function toggleGroup(groupId) {
 // ---------------- ✅ RENDER GROUP TABLE WITH COLUMN ORDERING ----------------
 function renderGroupTable(records) {
     if (records.length === 0) return '<p style="padding: 20px; text-align: center; color: #9ca3af;">No records</p>';
-    
+
     const allColumns = records[0].data ? Object.keys(records[0].data) : [];
-    
     let columns = orderColumns(allColumns);
 
     if (allColumns.map(c => c.toLowerCase()).includes('email')) {
@@ -312,14 +273,13 @@ function renderGroupTable(records) {
     if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
         columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
     }
-    
+
     let html = `
-            <div class="group-table-scroll">
-                <div class="resize-line"></div>
-                <table style="width: auto;">
+        <div class="group-table-scroll">
+            <div class="resize-line"></div>
+            <table style="width: auto;">
     `;
 
-    // Header
     html += '<thead><tr>';
     columns.forEach((col, index) => {
         html += `
@@ -331,7 +291,6 @@ function renderGroupTable(records) {
     });
     html += '</tr></thead>';
 
-    // Rows
     html += '<tbody>';
     records.forEach(record => {
         html += '<tr>';
@@ -345,43 +304,42 @@ function renderGroupTable(records) {
         html += '</tr>';
     });
     html += '</tbody>';
-    
+
     html += `
-                </table>
-            </div>
+            </table>
+        </div>
     `;
     return html;
 }
 
 async function searchRelated() {
     const searchValue = document.getElementById("searchValue").value.trim();
-    
+
     if (!searchValue) {
         alert("Please enter an email or phone number");
         return;
     }
-    
+
     isSearchMode = true;
     currentPage = 1;
     showLoading();
-    
+
     try {
         const res = await authFetch(
             `/related-search?upload_id=${uploadId}&value=${encodeURIComponent(searchValue)}&page=1&page_size=100`
         );
-        
+
         if (!res.ok) throw new Error("Search failed");
-        
+
         const data = await res.json();
-        
         const container = document.getElementById("resultsContainer");
-        
+
         if (data.records.length === 0) {
             container.innerHTML = '<div class="no-results">No records found for this search</div>';
             document.getElementById("relatedPagination").innerHTML = '';
             return;
         }
-        
+
         let html = `
             <div style="padding: 16px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #f59e0b;">
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -395,11 +353,10 @@ async function searchRelated() {
                 </div>
             </div>
         `;
-        
+
         html += '<div class="group-records" style="max-height: none;"><div class="group-table-scroll"><table>';
-        
+
         const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
-        
         let columns = orderColumns(allColumns);
 
         if (allColumns.map(c => c.toLowerCase()).includes('email')) {
@@ -408,13 +365,13 @@ async function searchRelated() {
         if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
             columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
         }
-        
+
         html += '<thead><tr>';
         columns.forEach(col => {
             html += `<th>${col}</th>`;
         });
         html += '</tr></thead>';
-        
+
         html += '<tbody>';
         data.records.forEach(record => {
             html += '<tr>';
@@ -428,12 +385,12 @@ async function searchRelated() {
             html += '</tr>';
         });
         html += '</tbody>';
-        
+
         html += '</table></div></div>';
-        
+
         container.innerHTML = html;
         document.getElementById("relatedPagination").innerHTML = '';
-        
+
     } catch (err) {
         console.error(err);
         alert("Search failed");
@@ -452,11 +409,10 @@ function resetSearch() {
 function renderPagination(total, page, size) {
     const pagination = document.getElementById("relatedPagination");
     pagination.innerHTML = "";
-    
+
     const totalPages = Math.ceil(total / size);
-    
     if (totalPages <= 1) return;
-    
+
     const prevBtn = document.createElement("button");
     prevBtn.innerText = "← Previous";
     prevBtn.disabled = page === 1;
@@ -465,15 +421,15 @@ function renderPagination(total, page, size) {
         loadGroupedView();
     };
     pagination.appendChild(prevBtn);
-    
+
     const MAX_VISIBLE = 7;
     let start = Math.max(1, page - Math.floor(MAX_VISIBLE / 2));
     let end = Math.min(totalPages, start + MAX_VISIBLE - 1);
-    
+
     if (end === totalPages) {
         start = Math.max(1, end - MAX_VISIBLE + 1);
     }
-    
+
     if (start > 1) {
         addPageButton(1, page);
         if (start > 2) {
@@ -482,11 +438,11 @@ function renderPagination(total, page, size) {
             pagination.appendChild(ellipsis);
         }
     }
-    
+
     for (let i = start; i <= end; i++) {
         addPageButton(i, page);
     }
-    
+
     if (end < totalPages) {
         if (end < totalPages - 1) {
             const ellipsis = document.createElement("span");
@@ -495,7 +451,7 @@ function renderPagination(total, page, size) {
         }
         addPageButton(totalPages, page);
     }
-    
+
     const nextBtn = document.createElement("button");
     nextBtn.innerText = "Next →";
     nextBtn.disabled = page === totalPages;
@@ -542,10 +498,8 @@ function attachGroupResizeHandlers(container) {
 
             resizeLine.classList.add('active');
 
-            // place resize line exactly on column edge
             const thRect = currentTh.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
-
             resizeLine.style.left =
                 (thRect.right - containerRect.left + container.scrollLeft) + 'px';
         });
@@ -557,12 +511,10 @@ function attachGroupResizeHandlers(container) {
         const delta = e.clientX - startX;
         const newWidth = Math.max(MIN_WIDTH, startWidth + delta);
 
-        // apply width to header
         currentTh.style.width = newWidth + 'px';
         currentTh.style.minWidth = newWidth + 'px';
         currentTh.style.maxWidth = newWidth + 'px';
 
-        // apply width to body cells
         table
             .querySelectorAll(`tbody tr td:nth-child(${colIndex + 1})`)
             .forEach(td => {
@@ -571,17 +523,14 @@ function attachGroupResizeHandlers(container) {
                 td.style.maxWidth = newWidth + 'px';
             });
 
-        // move resize line to actual column edge
         const containerRect = container.getBoundingClientRect();
         const thRect = currentTh.getBoundingClientRect();
-
         resizeLine.style.left =
             (thRect.right - containerRect.left + container.scrollLeft) + 'px';
     });
 
     document.addEventListener('mouseup', () => {
         if (!currentTh) return;
-
         currentTh = null;
         colIndex = -1;
         resizeLine.classList.remove('active');

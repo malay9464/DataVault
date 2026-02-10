@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import text
+from sqlalchemy import text, asc, desc, func
 from datetime import date
 import pandas as pd
 import io, json, os, time
@@ -1383,20 +1383,25 @@ def related_grouped(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     match_type: str = Query("all", regex="^(all|email|phone|merged|both)$"),
+    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),  # ✅ ADDED
     user: dict = Depends(get_current_user)
 ):
-    """
-    ✅ FIXED: Groups now match stats exactly
-    - Email Only: Shows only email-based groups
-    - Phone Only: Shows only phone-based groups  
-    - Both (Merged): Shows only email+phone combination groups
-    - All Groups: Shows all three types combined
-    """
     if match_type == 'both':
         match_type = 'merged'
-    
+
+    if sort == "size-desc":
+        order_clause = "ORDER BY record_count DESC, group_key ASC"
+    elif sort == "size-asc":
+        order_clause = "ORDER BY record_count ASC, group_key ASC"
+    elif sort == "alpha":
+        order_clause = "ORDER BY group_key ASC"
+    else:
+        order_clause = "ORDER BY record_count DESC, group_key ASC"
+
+    offset = (page - 1) * page_size  
+
     with engine.begin() as conn:
-        query = text("""
+        query = text(f"""
             WITH 
             normalized AS (
                 SELECT 
@@ -1408,7 +1413,6 @@ def related_grouped(
                 WHERE upload_id = :uid
             ),
             
-            -- Email-based groups
             email_groups AS (
                 SELECT 
                     email AS group_key,
@@ -1423,7 +1427,6 @@ def related_grouped(
                 HAVING COUNT(*) > 1
             ),
             
-            -- Phone-based groups
             phone_groups AS (
                 SELECT 
                     phone AS group_key,
@@ -1438,7 +1441,6 @@ def related_grouped(
                 HAVING COUNT(*) > 1
             ),
             
-            -- Merged groups (email + phone combinations)
             merged_groups AS (
                 SELECT 
                     email || '_' || phone AS group_key,
@@ -1454,7 +1456,6 @@ def related_grouped(
                 HAVING COUNT(*) > 1
             ),
             
-            -- Combine based on filter
             all_groups AS (
                 SELECT * FROM email_groups
                 WHERE :match_type IN ('all', 'email')
@@ -1466,11 +1467,11 @@ def related_grouped(
                 WHERE :match_type IN ('all', 'merged')
             ),
             
-            -- Rank by record count
+            -- ✅ FIXED: ROW_NUMBER now uses the same order_clause as the final result
             ranked_groups AS (
                 SELECT 
                     *,
-                    ROW_NUMBER() OVER (ORDER BY record_count DESC, group_key) AS row_num
+                    ROW_NUMBER() OVER ({order_clause}) AS row_num
                 FROM all_groups
             )
             
@@ -1482,11 +1483,9 @@ def related_grouped(
                 records
             FROM ranked_groups
             WHERE row_num BETWEEN :offset + 1 AND :offset + :limit
-            ORDER BY record_count DESC, group_key;
+            {order_clause};
         """)
-        
-        offset = (page - 1) * page_size
-        
+
         rows = conn.execute(
             query,
             {
@@ -1496,8 +1495,8 @@ def related_grouped(
                 "limit": page_size
             }
         ).fetchall()
-        
-        # Count total groups (simplified and accurate)
+
+        # Count total groups
         count_query = text("""
             WITH 
             normalized AS (
@@ -1549,12 +1548,12 @@ def related_grouped(
                         (SELECT cnt FROM merged_group_count)
                 END AS total;
         """)
-        
+
         total_groups = conn.execute(
             count_query,
             {"uid": upload_id, "match_type": match_type}
         ).scalar() or 0
-        
+
         # Format results
         formatted_groups = []
         for row in rows:
@@ -1563,14 +1562,14 @@ def related_grouped(
                 match_display.extend([f"📧 {e}" for e in row.emails])
             if row.phones:
                 match_display.extend([f"📱 {p}" for p in row.phones])
-            
+
             formatted_groups.append({
                 "match_key": " | ".join(match_display) if match_display else "Unknown",
                 "match_type": row.match_type,
                 "record_count": row.record_count,
                 "records": row.records
             })
-    
+
     return {
         "total_groups": total_groups,
         "page": page,
