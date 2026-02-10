@@ -260,19 +260,27 @@ function toggleGroup(groupId) {
     expandIcon.classList.toggle('collapsed');
 }
 
-// ---------------- ✅ RENDER GROUP TABLE WITH COLUMN ORDERING ----------------
+function getDefaultWidth(columnName) {
+    const col = columnName.toLowerCase();
+
+    if (col.includes('email') || col.includes('mail')) return 180;
+    if (col.includes('phone') || col.includes('mobile')) return 120;
+    if (col.includes('name')) return 180;
+    if (col.includes('address') || col.includes('description')) return 180;
+    if (col.includes('id') || col.includes('code')) return 120;
+    if (col.includes('city') || col.includes('state') || col.includes('zip')) return 100;
+    if (col.includes('date') || col.includes('time')) return 110;
+    if (col.includes('website') || col.includes('url')) return 160;
+    if (col.includes('street') || col.includes('add')) return 160;
+
+    return 150;
+}
+
 function renderGroupTable(records) {
     if (records.length === 0) return '<p style="padding: 20px; text-align: center; color: #9ca3af;">No records</p>';
 
     const allColumns = records[0].data ? Object.keys(records[0].data) : [];
-    let columns = orderColumns(allColumns);
-
-    if (allColumns.map(c => c.toLowerCase()).includes('email')) {
-        columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
-    }
-    if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
-        columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
-    }
+    const columns = orderColumns(allColumns);
 
     let html = `
         <div class="group-table-scroll">
@@ -282,8 +290,9 @@ function renderGroupTable(records) {
 
     html += '<thead><tr>';
     columns.forEach((col, index) => {
+        const width = getDefaultWidth(col);
         html += `
-            <th data-index="${index}">
+            <th data-index="${index}" style="width:${width}px; min-width:${width}px;">
                 ${col}
                 <div class="resize-handle"></div>
             </th>
@@ -299,7 +308,8 @@ function renderGroupTable(records) {
             if (value === null || value === undefined || value === "") {
                 value = "-";
             }
-            html += `<td>${value}</td>`;
+            const width = getDefaultWidth(col);
+            html += `<td style="width:${width}px; min-width:${width}px;">${value}</td>`;
         });
         html += '</tr>';
     });
@@ -357,14 +367,7 @@ async function searchRelated() {
         html += '<div class="group-records" style="max-height: none;"><div class="group-table-scroll"><table>';
 
         const allColumns = data.records[0].data ? Object.keys(data.records[0].data) : [];
-        let columns = orderColumns(allColumns);
-
-        if (allColumns.map(c => c.toLowerCase()).includes('email')) {
-            columns = columns.filter(c => c === 'email' || !c.toLowerCase().includes('email'));
-        }
-        if (allColumns.map(c => c.toLowerCase()).includes('phone')) {
-            columns = columns.filter(c => c.toLowerCase() === 'phone' || !isPhoneLike(c));
-        }
+        const columns = orderColumns(allColumns);
 
         html += '<thead><tr>';
         columns.forEach(col => {

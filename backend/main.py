@@ -102,7 +102,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [c.strip().lower() for c in df.columns]
     return df
 
-
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     # Normalize column names once
     df.columns = [
@@ -112,29 +111,28 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     email_cols = []
     for c in df.columns:
-        if c in ["email", "e_mail", "mail", "email_address"]:
-            email_cols = [c]  # Use exact match
+        if c in {"email", "e_mail", "mail", "email_address"}:
+            email_cols = [c]
             break
-    if not email_cols:
-        email_cols = [c for c in df.columns if "email" in c or c == "mail"]
-    
-    # Phone: look for exact matches first (INCLUDING contact fields)
+
+    # Phone: exact match only, "contact" alone is NOT a phone field
     phone_cols = []
     for c in df.columns:
-        if c in ["phone", "phone_no", "phone_number", "mobile", "mobile_no", "mobile_number", "contact", "contact_no", "contact_number"]:
-            phone_cols = [c]  # Use exact match
+        if c in {"phone", "phone_no", "phone_number", "mobile", "mobile_no",
+                 "mobile_number", "contact_no", "contact_number",
+                 "cell", "cell_no", "cell_number"}:
+            phone_cols = [c]
             break
     if not phone_cols:
-        phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c or "contact" in c]
-    
-    # Name: look for exact matches first
+        phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c]
+
+    # Name: exact match only, "companyname" / "contactperson" are NOT name fields
     name_cols = []
     for c in df.columns:
-        if c in ["name", "full_name", "fullname", "customer_name", "client_name"]:
+        if c in {"name", "full_name", "fullname", "customer_name",
+                 "client_name", "first_name", "last_name", "person_name", "username"}:
             name_cols = [c]
             break
-    if not name_cols:
-        name_cols = [c for c in df.columns if "name" in c]
 
     def clean_email(v):
         if pd.isna(v): return None
@@ -148,33 +146,30 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(v): return None
         return str(v).strip().lower()
 
-    # Create normalized columns
-    df["email"] = (
-        df[email_cols]
-        .apply(lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1)
-        if email_cols else None
-    )
+    # Only create canonical columns if source columns were found
+    if email_cols:
+        df["email"] = df[email_cols].apply(
+            lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1
+        )
 
-    df["phone"] = (
-        df[phone_cols]
-        .apply(lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1)
-        if phone_cols else None
-    )
+    if phone_cols:
+        df["phone"] = df[phone_cols].apply(
+            lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1
+        )
 
-    df["name"] = (
-        df[name_cols]
-        .apply(lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1)
-        if name_cols else None
-    )
+    if name_cols:
+        df["name"] = df[name_cols].apply(
+            lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1
+        )
 
-    # ✅ Drop ONLY the columns that were used for canonical fields
+    # Drop only the source columns that were mapped, never drop canonical ones,
+    # and never drop columns that don't exist in df
     columns_to_drop = set(email_cols + phone_cols + name_cols)
-    
-    # Don't drop the normalized columns if they already existed
     columns_to_drop.discard("email")
     columns_to_drop.discard("phone")
     columns_to_drop.discard("name")
-    
+    columns_to_drop = columns_to_drop & set(df.columns)
+
     df = df.drop(columns=list(columns_to_drop))
 
     return df
