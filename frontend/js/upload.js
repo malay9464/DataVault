@@ -14,6 +14,7 @@ let categoriesCache = [];
 let allUploads = [];
 let filteredUploads = [];
 const PAGE_SIZE = 10;
+let selectedUserId = null;
 
 // DOM Elements
 const fileInput = document.getElementById("fileInput");
@@ -253,53 +254,100 @@ async function loadCategories() {
     const cats = await res.json();
     categoriesCache = cats;
 
+    categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
+    cats.forEach(c => {
+        categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    });
+
+    // Only render category sidebar for non-admin
+    if (currentUser && currentUser.role !== "admin") {
+        categoryList.innerHTML = "";
+
+        let allCount = 0;
+        let uncatCount = 0;
+
+        cats.forEach(c => {
+            allCount += c.uploads;
+            if (c.name.toLowerCase() === "uncategorized") {
+                uncatCount = c.uploads;
+                return;
+            }
+
+            const div = document.createElement("div");
+            div.className = "category";
+
+            div.innerHTML = `
+                <span onclick="applyFilter(${c.id}, this.parentElement)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    ${c.name}
+                </span>
+                <span style="display: flex; align-items: center; gap: 8px;">
+                    <span class="count-badge">${c.uploads}</span>
+                    <span class="cat-actions" style="display:flex">
+                        <button onclick="event.stopPropagation(); renameCategory(${c.id}, '${c.name}')">✎</button>
+                        <button onclick="event.stopPropagation(); deleteCategory(${c.id})">✖</button>
+                    </span>
+                </span>
+            `;
+            categoryList.appendChild(div);
+        });
+
+        allCountSpan.innerText = allCount;
+        uncatCountSpan.innerText = uncatCount;
+    }
+
+    checkUploadReady();
+}
+
+async function loadAdminUserList() {
+    const res = await authFetch("/admin/users-with-stats");
+    if (!res.ok) return;
+
+    const users = await res.json();
     categoryList.innerHTML = "";
 
-    categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
+    let totalUploads = 0;
+    users.forEach(u => totalUploads += u.upload_count);
+    allCountSpan.innerText = totalUploads;
+    uncatCountSpan.innerText = 0;
 
-    let allCount = 0;
-    let uncatCount = 0;
-
-    cats.forEach(c => {
-        allCount += c.uploads;
-
-        if (c.name.toLowerCase() === "uncategorized") {
-            uncatCount = c.uploads;
-        }
-
-        categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-
-        if (c.name.toLowerCase() === "uncategorized") {
-            return;
-        }
-
+    users.forEach(u => {
         const div = document.createElement("div");
         div.className = "category";
+        div.id = `user-item-${u.id}`;
 
-        let icon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
-        </svg>`;
+        // Shorten email for display
+        const label = u.email.length > 22
+            ? u.email.substring(0, 20) + "…"
+            : u.email;
 
         div.innerHTML = `
-            <span onclick="applyFilter(${c.id}, this.parentElement)">
-                ${icon}
-                ${c.name}
+            <span onclick="filterByUser(${u.id}, this.parentElement)" title="${u.email}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+                ${label}
             </span>
-            <span style="display: flex; align-items: center; gap: 8px;">
-                <span class="count-badge">${c.uploads}</span>
-                <span class="cat-actions" style="display:${currentUser && currentUser.role === 'admin' ? 'none' : 'flex'}">
-                    <button onclick="event.stopPropagation(); renameCategory(${c.id}, '${c.name}')">✎</button>
-                    <button onclick="event.stopPropagation(); deleteCategory(${c.id})">✖</button>
-                </span>
-            </span>
+            <span class="count-badge">${u.upload_count}</span>
         `;
         categoryList.appendChild(div);
     });
+}
 
-    allCountSpan.innerText = allCount;
-    uncatCountSpan.innerText = uncatCount;
+function filterByUser(userId, el) {
+    selectedUserId = userId;
+    currentFilter = "all";
+    page = 1;
 
-    checkUploadReady();
+    document.querySelectorAll(".category")
+        .forEach(c => c.classList.remove("active"));
+    el.classList.add("active");
+
+    loadUploads();
 }
 
 function toggleAdvancedFilters() {
@@ -312,6 +360,7 @@ function toggleAdvancedFilters() {
 
 function applyFilter(type, el) {
     currentFilter = type;
+    selectedUserId = null;
     page = 1;
     updateURL();
     searchInput.value = "";
@@ -531,7 +580,8 @@ async function loadUser() {
     const manageUsersBtn = document.getElementById("manageUsersBtn");
 
     if (currentUser.role === "admin") {
-        // Admin: can manage users, cannot manage categories
+        const label = document.getElementById("sidebarSectionLabel");
+        if (label) label.textContent = "Users";
         if (newCategoryBtn) newCategoryBtn.style.display = "none";
         if (addUserBtn) addUserBtn.style.display = "flex";
         if (manageUsersBtn) manageUsersBtn.style.display = "flex";
@@ -555,40 +605,44 @@ async function loadUploads(showSkeleton = false) {
         emptyState.style.display = "none";
     }
 
-    let url = "";
+    const params = new URLSearchParams();
 
-    url = "/uploads";
-    {
-        const params = new URLSearchParams();
-
-        if (currentFilter === "uncat") {
-            const u = categoriesCache.find(
-                c => c.name.toLowerCase() === "uncategorized"
-            );
-            if (u) params.append("category_id", u.id);
-        }
-        else if (currentFilter !== "all") {
-            params.append("category_id", currentFilter);
-        }
-
-        const adv = buildSearchParams();
-        if (adv) {
-            adv.split("&").forEach(p => {
-                const [k, v] = p.split("=");
-                params.append(k, decodeURIComponent(v));
-            });
-        }
-
-        if (params.toString()) {
-            url += "?" + params.toString();
-        }
+    // Admin: filter by selected user
+    if (currentUser.role === "admin" && selectedUserId) {
+        params.append("created_by_user_id", selectedUserId);
     }
+
+    // Category / uncat filter — works for both roles
+    if (currentFilter === "uncat") {
+        // fetch all categories to find uncategorized id
+        const uncatEntry = categoriesCache.find(
+            c => c.name.toLowerCase() === "uncategorized"
+        );
+        if (uncatEntry) {
+            params.append("category_id", uncatEntry.id);
+        }
+    } else if (currentFilter !== "all") {
+        // numeric category id
+        params.append("category_id", currentFilter);
+    }
+
+    // Advanced search params
+    const adv = buildSearchParams();
+    if (adv) {
+        adv.split("&").forEach(p => {
+            const [k, v] = p.split("=");
+            if (v) params.append(k, decodeURIComponent(v));
+        });
+    }
+
+    const url = "/uploads" + (params.toString() ? "?" + params.toString() : "");
 
     try {
         const res = await authFetch(url);
 
         if (!res.ok) {
             showToast("Failed to load uploads", "error");
+            tableSkeleton.style.display = "none";
             return;
         }
 
@@ -814,6 +868,11 @@ function updateURL() {
 async function initPage() {
     await loadUser();
     await loadCategories();
+
+    if (currentUser.role === "admin") {
+        await loadAdminUserList();
+    }
+
     await loadUploads(true);
     checkUploadReady();
 }

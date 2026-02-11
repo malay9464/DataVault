@@ -678,7 +678,8 @@ def list_uploads(
     dup_max: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    created_by_user_id: int | None = None,
 ):
     where = []
     params = {}
@@ -687,6 +688,11 @@ def list_uploads(
     if current_user["role"] != "admin":
         where.append("u.created_by_user_id = :owner_id")
         params["owner_id"] = current_user["id"]
+
+    # Admin filtering by specific user
+    if current_user["role"] == "admin" and created_by_user_id:
+        where.append("u.created_by_user_id = :filter_uid")
+        params["filter_uid"] = created_by_user_id
 
     if category_id:
         where.append("u.category_id = :cid")
@@ -1082,6 +1088,36 @@ def delete_user(
         )
 
     return {"success": True, "policy": policy}
+
+@app.get("/admin/users-with-stats")
+def admin_users_with_stats(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+            SELECT 
+                u.id,
+                u.email,
+                u.role,
+                u.is_active,
+                COUNT(ul.upload_id) AS upload_count
+            FROM users u
+            LEFT JOIN upload_log ul ON ul.created_by_user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.email
+        """)).fetchall()
+
+    return [
+        {
+            "id": r.id,
+            "email": r.email,
+            "role": r.role,
+            "is_active": r.is_active,
+            "upload_count": r.upload_count
+        }
+        for r in rows
+    ]
 
 # ---------------- EXPORT ----------------
 @app.get("/export")
