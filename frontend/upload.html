@@ -68,18 +68,6 @@
             <span class="count-badge" id="allCount">0</span>
         </div>
 
-        <div class="category" id="myUploadsTab"
-             onclick="applyFilter('mine', this)"
-             style="display:none;">
-            <span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                </svg>
-                My Uploads
-            </span>
-        </div>
-
         <div class="category" onclick="applyFilter('uncat', this)">
             <span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -98,36 +86,37 @@
     <div class="sidebar-scroll" id="categoryList"></div>
 
     <!-- FIXED BOTTOM -->
-    <div class="sidebar-bottom">
-        <hr>
+    <!-- FIXED BOTTOM -->
+<div class="sidebar-bottom">
+    <hr>
 
-        <div onclick="addCategoryPrompt()" class="new-category-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            New Category
-        </div>
-
-        <div onclick="openAddUserModal()" class="new-category-btn" style="margin-top:6px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                <circle cx="8.5" cy="7" r="4"/>
-                <line x1="20" y1="8" x2="20" y2="14"/>
-                <line x1="23" y1="11" x2="17" y2="11"/>
-            </svg>
-            Add User
-        </div>
-
-        <div onclick="location.href='/users.html'" class="new-category-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
-            </svg>
-            Manage Users
-        </div>
+    <div id="newCategoryBtn" onclick="addCategoryPrompt()" class="new-category-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Category
     </div>
+
+    <div id="addUserBtn" onclick="openAddUserModal()" class="new-category-btn" style="display:none; margin-top:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="8.5" cy="7" r="4"/>
+            <line x1="20" y1="8" x2="20" y2="14"/>
+            <line x1="23" y1="11" x2="17" y2="11"/>
+        </svg>
+        Add User
+    </div>
+
+    <div id="manageUsersBtn" onclick="location.href='/users.html'" class="new-category-btn" style="display:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+        </svg>
+        Manage Users
+    </div>
+</div>
 </div>
 
 <!-- MAIN -->

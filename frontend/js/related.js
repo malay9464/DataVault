@@ -37,9 +37,6 @@ let isSearchMode = false;
 let currentFilter = 'all';
 let currentSort = 'size-desc';
 
-// ❌ REMOVED: cachedGroups — no longer needed, sorting is done by backend
-
-/* ---------- ✅ SHARED COLUMN ORDERING FUNCTION ---------- */
 function orderColumns(columns) {
     const priority = ["name", "email", "phone"];
     const priorityColumns = priority.filter(col => columns.includes(col));
@@ -47,7 +44,6 @@ function orderColumns(columns) {
     return [...priorityColumns, ...remainingColumns];
 }
 
-/* ---------- ✅ LOAD FILE METADATA ---------- */
 async function loadFileMetadata() {
     try {
         const res = await authFetch(`/upload-metadata?upload_id=${uploadId}`);
@@ -95,8 +91,6 @@ async function loadStats() {
     }
 }
 
-// ---------------- LOAD GROUPED VIEW ----------------
-// ✅ Now passes `sort` param to backend — sorting happens before pagination
 async function loadGroupedView() {
     showLoading();
 
@@ -109,9 +103,6 @@ async function loadGroupedView() {
 
         const data = await res.json();
 
-        // ❌ REMOVED: cachedGroups caching and applySorting() call
-        // Backend already returns groups in the correct sorted order
-
         renderGroupedView(data);
         renderPagination(data.total_groups, data.page, data.page_size);
 
@@ -121,9 +112,6 @@ async function loadGroupedView() {
     }
 }
 
-// ❌ REMOVED: applySorting() function — no longer needed
-
-// ✅ Sort change now resets to page 1 and fetches fresh sorted data from backend
 function handleSortChange() {
     if (isSearchMode) return;
     currentSort = document.getElementById("sortBy").value;

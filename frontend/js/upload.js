@@ -287,7 +287,7 @@ async function loadCategories() {
             </span>
             <span style="display: flex; align-items: center; gap: 8px;">
                 <span class="count-badge">${c.uploads}</span>
-                <span class="cat-actions">
+                <span class="cat-actions" style="display:${currentUser && currentUser.role === 'admin' ? 'none' : 'flex'}">
                     <button onclick="event.stopPropagation(); renameCategory(${c.id}, '${c.name}')">✎</button>
                     <button onclick="event.stopPropagation(); deleteCategory(${c.id})">✖</button>
                 </span>
@@ -526,18 +526,25 @@ async function loadUser() {
 
     currentUser = await res.json();
 
-    if (currentUser.role !== "admin") {
-        document
-          .querySelectorAll(".new-category-btn")
-          .forEach(b => b.style.display = "none");
+    const newCategoryBtn = document.getElementById("newCategoryBtn");
+    const addUserBtn = document.getElementById("addUserBtn");
+    const manageUsersBtn = document.getElementById("manageUsersBtn");
 
-        document
-          .querySelectorAll(".cat-actions")
-          .forEach(a => a.style.display = "none");
-    }
+    if (currentUser.role === "admin") {
+        // Admin: can manage users, cannot manage categories
+        if (newCategoryBtn) newCategoryBtn.style.display = "none";
+        if (addUserBtn) addUserBtn.style.display = "flex";
+        if (manageUsersBtn) manageUsersBtn.style.display = "flex";
 
-    if (currentUser.role === "user") {
-        document.getElementById("myUploadsTab").style.display = "flex";
+        // Also hide rename/delete buttons on categories (populated dynamically)
+        document.querySelectorAll(".cat-actions")
+            .forEach(a => a.style.display = "none");
+
+    } else {
+        // User: can manage categories, cannot manage users
+        if (newCategoryBtn) newCategoryBtn.style.display = "flex";
+        if (addUserBtn) addUserBtn.style.display = "none";
+        if (manageUsersBtn) manageUsersBtn.style.display = "none";
     }
 }
 
@@ -550,10 +557,8 @@ async function loadUploads(showSkeleton = false) {
 
     let url = "";
 
-    if (currentFilter === "mine") {
-        url = "/my-uploads";
-    } else {
-        url = "/uploads";
+    url = "/uploads";
+    {
         const params = new URLSearchParams();
 
         if (currentFilter === "uncat") {

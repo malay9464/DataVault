@@ -23,7 +23,7 @@ from users import router as users_router
 from db import engine, copy_cleaned_data
 from logger import log_to_csv
 from auth import authenticate_user, create_access_token, get_current_user
-from permissions import can_delete_upload, admin_only
+from permissions import can_delete_upload, can_access_upload, admin_only
 from security import hash_password
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -94,6 +94,19 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 # ---------------- UTIL ----------------
 def clean_nan(row):
     return {k: (None if pd.isna(v) else v) for k, v in row.items()}
+
+def assert_upload_access(conn, upload_id: int, user: dict):
+    """Centralized ownership check for any upload_id access."""
+    owner = conn.execute(
+        text("SELECT created_by_user_id FROM upload_log WHERE upload_id = :uid"),
+        {"uid": upload_id}
+    ).scalar()
+
+    if owner is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if not can_access_upload(user, owner):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
 # ---------------- FIELD NORMALIZATION ----------------
 
@@ -174,17 +187,28 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-# ---------------- CATEGORIES (ADMIN VIA UI LATER) ----------------
 @app.get("/categories")
-def list_categories():
+def list_categories(current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
-        rows = conn.execute(text("""
-            SELECT c.id, c.name, COUNT(u.upload_id) AS uploads
-            FROM categories c
-            LEFT JOIN upload_log u ON u.category_id = c.id
-            GROUP BY c.id
-            ORDER BY c.name
-        """)).fetchall()
+        if current_user["role"] == "admin":
+            rows = conn.execute(text("""
+                SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
+                       c.created_by_user_id
+                FROM categories c
+                LEFT JOIN upload_log u ON u.category_id = c.id
+                GROUP BY c.id
+                ORDER BY c.name
+            """)).fetchall()
+        else:
+            rows = conn.execute(text("""
+                SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
+                       c.created_by_user_id
+                FROM categories c
+                LEFT JOIN upload_log u ON u.category_id = c.id
+                WHERE c.created_by_user_id = :uid
+                GROUP BY c.id
+                ORDER BY c.name
+            """), {"uid": current_user["id"]}).fetchall()
 
     return [
         {"id": r.id, "name": r.name, "uploads": r.uploads}
@@ -208,9 +232,10 @@ async def upload_file(
                 SELECT 1
                 FROM upload_log
                 WHERE filename = :fname
+                  AND created_by_user_id = :uid
                 LIMIT 1
             """),
-            {"fname": original_filename}
+            {"fname": original_filename, "uid": user["id"]}
         ).scalar()
 
     if exists:
@@ -658,6 +683,11 @@ def list_uploads(
     where = []
     params = {}
 
+    # Tenant isolation — users only see their own
+    if current_user["role"] != "admin":
+        where.append("u.created_by_user_id = :owner_id")
+        params["owner_id"] = current_user["id"]
+
     if category_id:
         where.append("u.category_id = :cid")
         params["cid"] = category_id
@@ -757,42 +787,6 @@ def cleanup_abandoned_uploads(user: dict = Depends(admin_only)):
         "message": f"Cleaned up {deleted_count} abandoned upload files"
     }
 
-@app.get("/my-uploads")
-def list_my_uploads(
-    current_user: dict = Depends(get_current_user)
-):
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text("""
-                SELECT u.upload_id, u.filename,
-                       u.total_records, u.duplicate_records,
-                       u.failed_records, u.status,
-                       u.uploaded_at,
-                       u.created_by_user_id,
-                       c.name AS category
-                FROM upload_log u
-                JOIN categories c ON c.id = u.category_id
-                WHERE u.created_by_user_id = :uid
-                ORDER BY u.uploaded_at DESC
-            """),
-            {"uid": current_user["id"]}
-        ).fetchall()
-
-    return [
-        {
-            "upload_id": r.upload_id,
-            "filename": r.filename,
-            "total_records": r.total_records,
-            "duplicate_records": r.duplicate_records,
-            "failed_records": r.failed_records,
-            "status": r.status,
-            "uploaded_at": str(r.uploaded_at),
-            "category": r.category,
-            "created_by_user_id": r.created_by_user_id
-        }
-        for r in rows
-    ]
-
 # ---------------- PREVIEW ----------------
 @app.get("/preview")
 def preview_data(
@@ -806,15 +800,15 @@ def preview_data(
     offset = (page - 1) * page_size
 
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
+
         total = conn.execute(
             text("SELECT COUNT(*) FROM cleaned_data WHERE upload_id=:uid"),
             {"uid": upload_id}
         ).scalar()
 
-        # Build ORDER BY clause
         order_by = "ORDER BY id"
         if sort_column:
-            # Sanitize column name and build sort clause
             direction = "DESC" if sort_direction == "desc" else "ASC"
             order_by = f"ORDER BY row_data->>'{sort_column}' {direction}"
 
@@ -835,7 +829,7 @@ def preview_data(
     excluded_prefixes = ["original_", "raw_"]
     all_columns = list(rows[0].row_data.keys())
     normalized_columns = [
-        col for col in all_columns 
+        col for col in all_columns
         if not any(col.startswith(prefix) for prefix in excluded_prefixes)
     ]
 
@@ -867,6 +861,7 @@ def search_data(
     search_term = f"%{query.lower()}%"
     
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         # Get columns from first row
         first_row = conn.execute(
             text("""
@@ -944,6 +939,7 @@ def get_upload_metadata(
     Returns filename and other relevant info.
     """
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         result = conn.execute(
             text("""
                 SELECT upload_id, filename, total_records, uploaded_at
@@ -1013,6 +1009,80 @@ def reset_user_password(
 
     return {"success": True}
 
+@app.delete("/admin/users/{user_id}")
+def delete_user(
+    user_id: int,
+    policy: str = Query(..., regex="^(delete_all|transfer)$"),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+        # Confirm user exists
+        target = conn.execute(
+            text("SELECT id, email FROM users WHERE id = :uid"),
+            {"uid": user_id}
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Prevent admin deleting themselves
+        if user_id == current_user["id"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete your own account"
+            )
+
+        if policy == "delete_all":
+            # Delete all cleaned_data rows for this user's uploads
+            conn.execute(text("""
+                DELETE FROM cleaned_data
+                WHERE upload_id IN (
+                    SELECT upload_id FROM upload_log
+                    WHERE created_by_user_id = :uid
+                )
+            """), {"uid": user_id})
+
+            # Delete upload_log entries
+            conn.execute(
+                text("DELETE FROM upload_log WHERE created_by_user_id = :uid"),
+                {"uid": user_id}
+            )
+
+            # Delete categories
+            conn.execute(
+                text("DELETE FROM categories WHERE created_by_user_id = :uid"),
+                {"uid": user_id}
+            )
+
+        elif policy == "transfer":
+            # Find admin id (the current admin performing the action)
+            admin_id = current_user["id"]
+
+            # Transfer uploads
+            conn.execute(text("""
+                UPDATE upload_log
+                SET created_by_user_id = :admin_id
+                WHERE created_by_user_id = :uid
+            """), {"admin_id": admin_id, "uid": user_id})
+
+            # Transfer categories
+            conn.execute(text("""
+                UPDATE categories
+                SET created_by_user_id = :admin_id
+                WHERE created_by_user_id = :uid
+            """), {"admin_id": admin_id, "uid": user_id})
+
+        # Delete user
+        conn.execute(
+            text("DELETE FROM users WHERE id = :uid"),
+            {"uid": user_id}
+        )
+
+    return {"success": True, "policy": policy}
+
 # ---------------- EXPORT ----------------
 @app.get("/export")
 def export_data(
@@ -1021,6 +1091,7 @@ def export_data(
     user: dict = Depends(get_current_user)
 ):
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         rows = conn.execute(
             text("""
                 SELECT row_data
@@ -1106,17 +1177,26 @@ def create_category(
     name: str = Query(...),
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+    if current_user["role"] == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admins cannot create categories"
+        )
 
     with engine.begin() as conn:
         try:
             conn.execute(
-                text("INSERT INTO categories (name) VALUES (:n)"),
-                {"n": name.strip()}
+                text("""
+                    INSERT INTO categories (name, created_by_user_id)
+                    VALUES (:n, :uid)
+                """),
+                {"n": name.strip(), "uid": current_user["id"]}
             )
         except:
-            raise HTTPException(status_code=400, detail="Category already exists")
+            raise HTTPException(
+                status_code=400,
+                detail="Category already exists"
+            )
 
     return {"success": True}
 
@@ -1126,24 +1206,33 @@ def rename_category(
     name: str = Query(...),
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+    if current_user["role"] == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admins cannot rename categories"
+        )
 
     with engine.begin() as conn:
-        res = conn.execute(
+        # Verify ownership
+        owner = conn.execute(
+            text("SELECT created_by_user_id FROM categories WHERE id = :cid"),
+            {"cid": category_id}
+        ).scalar()
+
+        if owner is None:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        if owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not your category")
+
+        conn.execute(
             text("""
-                UPDATE categories
-                SET name = :name
-                WHERE id = :cid
+                UPDATE categories SET name = :name WHERE id = :cid
             """),
             {"name": name.strip(), "cid": category_id}
         )
 
-        if res.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Category not found")
-
     return {"success": True}
-
 
 # ---------------- STATIC ----------------
 @app.get("/")
@@ -1209,32 +1298,39 @@ def delete_category(
     category_id: int,
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+    if current_user["role"] == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admins cannot delete categories"
+        )
 
     with engine.begin() as conn:
+        owner = conn.execute(
+            text("SELECT created_by_user_id FROM categories WHERE id = :cid"),
+            {"cid": category_id}
+        ).scalar()
+
+        if owner is None:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        if owner != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not your category")
+
         count = conn.execute(
-            text("""
-                SELECT COUNT(*)
-                FROM upload_log
-                WHERE category_id = :cid
-            """),
+            text("SELECT COUNT(*) FROM upload_log WHERE category_id = :cid"),
             {"cid": category_id}
         ).scalar()
 
         if count > 0:
             raise HTTPException(
                 status_code=400,
-                detail="Category has uploads"
+                detail="Category has uploads. Delete or move them first."
             )
 
-        res = conn.execute(
+        conn.execute(
             text("DELETE FROM categories WHERE id = :cid"),
             {"cid": category_id}
         )
-
-        if res.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Category not found")
 
     return {"success": True}
 
@@ -1245,7 +1341,7 @@ def related_records(
     user: dict = Depends(get_current_user)
 ):
     with engine.begin() as conn:
-
+        assert_upload_access(conn, upload_id, user)
         # Step 1: Get base record identifiers
         base = conn.execute(
             text("""
@@ -1324,6 +1420,7 @@ def related_search(
     where_sql = " OR ".join(where_conditions)
     
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         # Count total (fast with indexes)
         total = conn.execute(
             text(f"""
@@ -1396,6 +1493,7 @@ def related_grouped(
     offset = (page - 1) * page_size  
 
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         query = text(f"""
             WITH 
             normalized AS (
@@ -1581,6 +1679,7 @@ def related_grouped_stats(
     ✅ FIXED: Stats now match exactly what's displayed in /related-grouped
     """
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         stats = conn.execute(
             text("""
                 WITH 
@@ -1662,6 +1761,7 @@ def get_header_metadata(
     Shows original headers, final headers, and resolution type.
     """
     with engine.begin() as conn:
+        assert_upload_access(conn, upload_id, user)
         result = conn.execute(
             text("""
                 SELECT 

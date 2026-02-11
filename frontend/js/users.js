@@ -52,6 +52,10 @@ async function loadUsers() {
                         onclick="resetPassword(${u.id}, '${u.email}')">
                         Reset Password
                     </button>
+                    <button class="btn btn-delete"
+                        onclick="openDeleteUserModal(${u.id}, '${u.email}')">
+                        Delete
+                    </button>
                 </td>
             </tr>
         `;
@@ -76,3 +80,41 @@ async function resetPassword(userId, email) {
 }
 
 loadUsers();
+
+function openDeleteUserModal(userId, email) {
+    document.getElementById("deleteUserEmail").textContent = email;
+    document.getElementById("deleteUserModal").dataset.userId = userId;
+    document.getElementById("deleteUserModal").style.display = "flex";
+}
+
+function closeDeleteUserModal() {
+    document.getElementById("deleteUserModal").style.display = "none";
+    document.getElementById("deleteUserModal").dataset.userId = "";
+}
+
+async function confirmDeleteUser(policy) {
+    const modal = document.getElementById("deleteUserModal");
+    const userId = modal.dataset.userId;
+
+    if (!userId) return;
+
+    const res = await authFetch(
+        `/admin/users/${userId}?policy=${policy}`,
+        { method: "DELETE" }
+    );
+
+    closeDeleteUserModal();
+
+    if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || "Failed to delete user");
+        return;
+    }
+
+    const msg = policy === "delete_all"
+        ? "User and all their data deleted."
+        : "User deleted. Data transferred to admin.";
+
+    alert(msg);
+    loadUsers();
+}
