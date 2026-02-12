@@ -221,9 +221,16 @@ async def upload_file(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
+    # ---------- ADMIN BLOCK ----------
+    if user["role"] == "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admins cannot upload files"
+        )
+
     contents = await file.read()
     original_filename = file.filename
-    name = original_filename.lower()  # ONLY for extension checks
+    name = original_filename.lower()
 
     # ---------- FILENAME DUPLICATE CHECK (CASE-SENSITIVE) ----------
     with engine.begin() as conn:
@@ -246,7 +253,6 @@ async def upload_file(
 
     upload_id = int(time.time() * 1000000)
 
-    # Read first chunk/sheet to detect headers
     if name.endswith(".csv"):
         try:
             preview_df = pd.read_csv(io.BytesIO(contents), nrows=100, encoding="utf-8")
@@ -257,31 +263,23 @@ async def upload_file(
     else:
         raise HTTPException(status_code=400, detail="Unsupported file")
 
-    # Detect header case
     case_type, metadata = detect_header_case(preview_df)
-    
-    # Get column samples for user review
     column_samples = get_column_samples(preview_df)
-    
-    # Store original headers
     original_headers = {
         'columns': [str(c) for c in preview_df.columns],
         'case_type': case_type,
         'metadata': metadata,
         'samples': column_samples
     }
-  
+
     if case_type in ['missing', 'suspicious']:
-        
-        # 1. Save file to temp storage
         temp_dir = tempfile.gettempdir()
         temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
         temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
-        
+
         with open(temp_file_path, 'wb') as f:
             f.write(contents)
-        
-        # 2. Save metadata separately (NO DATABASE WRITE)
+
         temp_metadata = {
             'upload_id': upload_id,
             'category_id': category_id,
@@ -290,11 +288,10 @@ async def upload_file(
             'created_at': time.time(),
             'original_headers': original_headers
         }
-        
+
         with open(temp_meta_path, 'w') as f:
             json.dump(temp_metadata, f)
-        
-        # 3. Return pending status WITHOUT creating DB record
+
         return {
             "success": False,
             "status": "pending_headers",
@@ -303,75 +300,42 @@ async def upload_file(
             "message": "Headers need review" if case_type == 'missing' else "First row might be data",
             "headers": original_headers
         }
-       
+
     total_records = 0
     duplicate_records = 0
     seen_hashes = set()
 
-    # ---------- 1. DROP INDEX ----------
     with engine.connect() as conn:
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
 
-    # ---------- 2. STREAM FILE SAFELY ----------
-
     def csv_chunk_reader():
-        """
-        Try UTF-8 first, fallback to latin1 (Windows CSVs)
-        """
         try:
-            return pd.read_csv(
-                io.BytesIO(contents),
-                chunksize=100_000,
-                encoding="utf-8"
-            )
+            return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="utf-8")
         except UnicodeDecodeError:
-            return pd.read_csv(
-                io.BytesIO(contents),
-                chunksize=100_000,
-                encoding="latin1"
-            )
+            return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
 
-    # CSV handling (streaming)
     if name.endswith(".csv"):
-
         reader = csv_chunk_reader()
-
         for chunk in reader:
-
             total_records += len(chunk)
-
             chunk = normalize_dataframe(chunk)
-
             chunk = chunk.drop_duplicates()
-
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
-
             seen_hashes.update(chunk["__hash"])
             chunk = chunk.drop(columns=["__hash"])
-
             copy_cleaned_data(engine, upload_id, chunk)
 
-
-    # Excel handling (cannot stream, but still fast)
     elif name.endswith(".xls") or name.endswith(".xlsx"):
-
         df = pd.read_excel(io.BytesIO(contents))
-
         total_records = len(df)
-
         df = normalize_dataframe(df)
-
         df = df.drop_duplicates()
-
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
-
         duplicate_records = total_records - len(df)
-
         df = df.drop(columns=["__hash"])
-
         copy_cleaned_data(engine, upload_id, df)
 
     else:
@@ -380,7 +344,6 @@ async def upload_file(
     if name.endswith(".csv"):
         duplicate_records = total_records - len(seen_hashes)
 
-    # ---------- 3. RECREATE INDEX ----------
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE INDEX idx_cleaned_data_upload_id
@@ -388,11 +351,8 @@ async def upload_file(
         """))
         conn.commit()
 
-    # ---------- 4. INSERT UPLOAD LOG ----------
-    
-    # Store final headers for valid case
     final_headers = {'columns': [str(c) for c in preview_df.columns]}
-    
+
     with engine.connect() as conn:
         conn.execute(
             text("""
@@ -400,7 +360,7 @@ async def upload_file(
                 (upload_id, category_id, filename,
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
-                 header_status, original_headers, final_headers, 
+                 header_status, original_headers, final_headers,
                  header_resolution_type)
                 VALUES
                 (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
@@ -420,7 +380,7 @@ async def upload_file(
         conn.commit()
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
-    
+
     return {
         "success": True,
         "upload_id": upload_id

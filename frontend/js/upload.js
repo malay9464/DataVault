@@ -581,28 +581,34 @@ async function loadUser() {
     }
 
     currentUser = await res.json();
-    console.log("Current user role:", currentUser.role);
 
     const newCategoryBtn = document.getElementById("newCategoryBtn");
     const addUserBtn = document.getElementById("addUserBtn");
     const manageUsersBtn = document.getElementById("manageUsersBtn");
+    const uploadSection = document.querySelector(".upload-section");
+    const divider = document.querySelector(".divider");
 
     if (currentUser.role === "admin") {
         const label = document.getElementById("sidebarSectionLabel");
         if (label) label.textContent = "Users";
+
         if (newCategoryBtn) newCategoryBtn.style.display = "none";
         if (addUserBtn) addUserBtn.style.display = "flex";
         if (manageUsersBtn) manageUsersBtn.style.display = "flex";
 
-        // Also hide rename/delete buttons on categories (populated dynamically)
+        if (uploadSection) uploadSection.style.display = "none";
+        if (divider) divider.style.display = "none";
+
         document.querySelectorAll(".cat-actions")
             .forEach(a => a.style.display = "none");
 
     } else {
-        // User: can manage categories, cannot manage users
         if (newCategoryBtn) newCategoryBtn.style.display = "flex";
         if (addUserBtn) addUserBtn.style.display = "none";
         if (manageUsersBtn) manageUsersBtn.style.display = "none";
+
+        if (uploadSection) uploadSection.style.display = "block";
+        if (divider) divider.style.display = "block";
     }
 }
 
@@ -660,8 +666,30 @@ async function loadUploads(showSkeleton = false) {
         tableSkeleton.style.display = "none";
 
         if (filteredUploads.length === 0) {
-            emptyState.style.display = "block";
-            tableWrapper.style.display = "none";
+        tableWrapper.style.display = "none";
+
+        const hasAdvancedFilter = (
+            (totalMin && totalMin.value) ||
+            (totalMax && totalMax.value) ||
+            (dupMin && dupMin.value) ||
+            (dupMax && dupMax.value) ||
+            (dateFrom && dateFrom.value) ||
+            (dateTo && dateTo.value) ||
+            (searchInput && searchInput.value.trim())
+        );
+
+        const emptyMsg = document.getElementById("emptyMessage");
+        const emptyReset = document.getElementById("emptyReset");
+
+        if (hasAdvancedFilter) {
+            if (emptyMsg) emptyMsg.textContent = "No uploads match your filters";
+            if (emptyReset) emptyReset.style.display = "inline-block";
+        } else {
+            if (emptyMsg) emptyMsg.textContent = "No files have been uploaded yet";
+            if (emptyReset) emptyReset.style.display = "none";
+        }
+
+        emptyState.style.display = "block";
         } else {
             emptyState.style.display = "none";
             tableWrapper.style.display = "block";
@@ -830,14 +858,15 @@ async function renameCategory(id, oldName) {
 }
 
 async function deleteCategory(id) {
-    if (!confirm("Delete this category? Uploads will be moved to Uncategorized.")) return;
+    if (!confirm("Delete this category? This cannot be undone.")) return;
 
     const res = await authFetch(`/categories/${id}`, {
         method: "DELETE"
     });
 
     if (!res.ok) {
-        showToast("Cannot delete - category has uploads", "error");
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Cannot delete category", "error");
     } else {
         showToast("Category deleted successfully", "success");
         loadCategories();
