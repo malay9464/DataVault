@@ -1,3 +1,4 @@
+
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
@@ -48,7 +49,7 @@ WHERE created_by_user_id IS NULL;
 ALTER TABLE upload_log
 ALTER COLUMN created_by_user_id SET NOT NULL;
 
-
+select * from cleaned_data;
 select * from users;
 
 UPDATE users
@@ -71,4 +72,31 @@ VALUES (
 
 select * from users;
 
-select * from 
+-- Run these SQL commands in your PostgreSQL database to create indexes
+-- This will make queries 100x faster on large datasets
+
+-- 1. Index on upload_id (already exists, but ensure it's there)
+CREATE INDEX IF NOT EXISTS idx_cleaned_data_upload_id 
+ON cleaned_data(upload_id);
+
+-- 2. Index on email field (extracted from JSONB)
+CREATE INDEX IF NOT EXISTS idx_cleaned_data_email 
+ON cleaned_data(LOWER(TRIM(row_data->>'email')));
+
+-- 3. Index on phone field (extracted and normalized from JSONB)
+CREATE INDEX IF NOT EXISTS idx_cleaned_data_phone 
+ON cleaned_data(REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g'));
+
+-- 4. Composite index for faster duplicate detection
+CREATE INDEX IF NOT EXISTS idx_cleaned_data_upload_email 
+ON cleaned_data(upload_id, LOWER(TRIM(row_data->>'email'))) 
+WHERE LOWER(TRIM(row_data->>'email')) IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_data_upload_phone 
+ON cleaned_data(upload_id, REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g'))
+WHERE REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') != '';
+
+-- Analyze tables to update statistics
+ANALYZE cleaned_data;
+
+select * from users

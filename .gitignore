@@ -10,7 +10,7 @@ Thumbs.db
 # Runtime logs
 backend/logs/
 *.csv
-
+.sql
 # SQL local scripts (optional)
 log_table.sql
 sql2.sql
