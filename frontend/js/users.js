@@ -27,9 +27,9 @@ function logout() {
 }
 
 async function loadUsers() {
-    const res = await authFetch("/admin/users");
+    const res = await authFetch("/users");
 
-    if (!res.ok) {
+    if (!res || !res.ok) {
         alert("Access denied");
         location.href = "/";
         return;
@@ -39,26 +39,31 @@ async function loadUsers() {
     const tbody = document.getElementById("usersTable");
     tbody.innerHTML = "";
 
+    if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748b; padding:24px;">No users found</td></tr>`;
+        return;
+    }
+
     users.forEach(u => {
-        tbody.innerHTML += `
-            <tr>
-                <td>${u.email}</td>
-                <td>${u.role}</td>
-                <td class="status-active">
-                    ${u.is_active ? "Active" : "Disabled"}
-                </td>
-                <td>
-                    <button class="btn btn-reset"
-                        onclick="resetPassword(${u.id}, '${u.email}')">
-                        Reset Password
-                    </button>
-                    <button class="btn btn-delete"
-                        onclick="openDeleteUserModal(${u.id}, '${u.email}')">
-                        Delete
-                    </button>
-                </td>
-            </tr>
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${u.email}</td>
+            <td>${u.role}</td>
+            <td class="${u.is_active ? 'status-active' : 'status-inactive'}">
+                ${u.is_active ? "Active" : "Disabled"}
+            </td>
+            <td style="display:flex; gap:8px;">
+                <button class="btn btn-reset"
+                    onclick="resetPassword(${u.id}, '${u.email}')">
+                    Reset Password
+                </button>
+                <button class="btn btn-delete"
+                    onclick="openDeleteUserModal(${u.id}, '${u.email}')">
+                    Delete
+                </button>
+            </td>
         `;
+        tbody.appendChild(row);
     });
 }
 
@@ -71,7 +76,7 @@ async function resetPassword(userId, email) {
         { method: "POST" }
     );
 
-    if (!res.ok) {
+    if (!res || !res.ok) {
         alert("Failed to reset password");
         return;
     }
@@ -79,24 +84,35 @@ async function resetPassword(userId, email) {
     alert("Password reset successfully");
 }
 
-loadUsers();
-
 function openDeleteUserModal(userId, email) {
-    document.getElementById("deleteUserEmail").textContent = email;
-    document.getElementById("deleteUserModal").dataset.userId = userId;
-    document.getElementById("deleteUserModal").style.display = "flex";
+    const modal = document.getElementById("deleteUserModal");
+    const emailEl = document.getElementById("deleteUserEmail");
+
+    if (!modal || !emailEl) {
+        alert("Modal not found in DOM");
+        return;
+    }
+
+    emailEl.textContent = email;
+    modal.dataset.userId = String(userId);
+    modal.style.display = "flex";
 }
 
 function closeDeleteUserModal() {
-    document.getElementById("deleteUserModal").style.display = "none";
-    document.getElementById("deleteUserModal").dataset.userId = "";
+    const modal = document.getElementById("deleteUserModal");
+    if (!modal) return;
+    modal.style.display = "none";
+    modal.dataset.userId = "";
 }
 
 async function confirmDeleteUser(policy) {
     const modal = document.getElementById("deleteUserModal");
     const userId = modal.dataset.userId;
 
-    if (!userId) return;
+    if (!userId) {
+        alert("No user selected");
+        return;
+    }
 
     const res = await authFetch(
         `/admin/users/${userId}?policy=${policy}`,
@@ -105,8 +121,8 @@ async function confirmDeleteUser(policy) {
 
     closeDeleteUserModal();
 
-    if (!res.ok) {
-        const err = await res.json();
+    if (!res || !res.ok) {
+        const err = await res.json().catch(() => ({}));
         alert(err.detail || "Failed to delete user");
         return;
     }
@@ -118,3 +134,6 @@ async function confirmDeleteUser(policy) {
     alert(msg);
     loadUsers();
 }
+
+// Start
+loadUsers();

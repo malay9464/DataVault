@@ -303,7 +303,11 @@ async function loadCategories() {
 
 async function loadAdminUserList() {
     const res = await authFetch("/admin/users-with-stats");
-    if (!res.ok) return;
+
+    if (!res || !res.ok) {
+        console.error("Failed to load user list:", res?.status);
+        return;
+    }
 
     const users = await res.json();
     categoryList.innerHTML = "";
@@ -311,14 +315,17 @@ async function loadAdminUserList() {
     let totalUploads = 0;
     users.forEach(u => totalUploads += u.upload_count);
     allCountSpan.innerText = totalUploads;
-    uncatCountSpan.innerText = 0;
+
+    if (users.length === 0) {
+        categoryList.innerHTML = `<div style="padding:12px; color:#94a3b8; font-size:13px;">No users found</div>`;
+        return;
+    }
 
     users.forEach(u => {
         const div = document.createElement("div");
         div.className = "category";
         div.id = `user-item-${u.id}`;
 
-        // Shorten email for display
         const label = u.email.length > 22
             ? u.email.substring(0, 20) + "…"
             : u.email;
@@ -574,6 +581,7 @@ async function loadUser() {
     }
 
     currentUser = await res.json();
+    console.log("Current user role:", currentUser.role);
 
     const newCategoryBtn = document.getElementById("newCategoryBtn");
     const addUserBtn = document.getElementById("addUserBtn");
@@ -869,7 +877,7 @@ async function initPage() {
     await loadUser();
     await loadCategories();
 
-    if (currentUser.role === "admin") {
+    if (currentUser && currentUser.role === "admin") {
         await loadAdminUserList();
     }
 

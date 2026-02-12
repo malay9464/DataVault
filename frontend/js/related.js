@@ -374,8 +374,8 @@ async function searchRelated() {
                 html += `<td>${value}</td>`;
             });
             html += '</tr>';
+            html += '</tbody>';
         });
-        html += '</tbody>';
 
         html += '</table></div></div>';
 
