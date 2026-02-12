@@ -25,22 +25,40 @@ async function authFetch(url, options = {}) {
 const uploadId = new URLSearchParams(window.location.search).get('upload_id');
 let headerInfo = null;
 let caseType = null;
-let columnWidths = {}; // Store custom column widths
+let columnWidths = {};
 
 function getDefaultWidth(columnName) {
     const col = columnName.toLowerCase();
-    
     if (col.includes('email') || col.includes('mail')) return 220;
-    if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 140;
+    if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 160;
     if (col.includes('name')) return 180;
-    if (col.includes('address') || col.includes('resume') || col.includes('description')) return 250;
+    if (col.includes('address') || col.includes('description')) return 250;
     if (col.includes('id') || col.includes('code')) return 120;
     if (col.includes('city') || col.includes('state') || col.includes('zip')) return 130;
-    if (col.includes('date') || col.includes('time')) return 140;
-    if (col.includes('age') || col.includes('level')) return 100;
-    if (col.includes('gender') || col.includes('active')) return 100;
-    
-    return 150; // Default
+    if (col.includes('date') || col.includes('time')) return 150;
+    if (col.includes('age') || col.includes('level') || col.includes('gender')) return 100;
+    return 150;
+}
+
+// ── Update renamed column counter in action bar ──
+function updateRenamedCount() {
+    const inputs = document.querySelectorAll('input[id^="col_"]');
+    let count = 0;
+    inputs.forEach(input => {
+        if (input.value.trim() !== '') count++;
+    });
+
+    const badge = document.getElementById('renamedCount');
+    const statusText = document.getElementById('actionStatusText');
+
+    if (count > 0) {
+        badge.textContent = `${count} column${count > 1 ? 's' : ''} renamed`;
+        badge.style.display = 'inline';
+        statusText.textContent = 'Confirm to finalize and ingest the file.';
+    } else {
+        badge.style.display = 'none';
+        statusText.textContent = 'Review columns above, then confirm to continue.';
+    }
 }
 
 async function loadHeaders() {
@@ -55,6 +73,12 @@ async function loadHeaders() {
         headerInfo = data.header_info;
         caseType = headerInfo.case_type;
 
+        // Update page subtitle with filename
+        const subtitle = document.getElementById('pageSubtitle');
+        if (subtitle && data.filename) {
+            subtitle.innerHTML = `File: <span class="filename">${data.filename}</span>`;
+        }
+
         renderHeaderUI();
     } catch (error) {
         showAlert('error', 'Failed to load header information: ' + error.message);
@@ -66,66 +90,67 @@ function renderHeaderUI() {
     const headerContent = document.getElementById('headerContent');
     const firstRowOptionContainer = document.getElementById('firstRowOptionContainer');
 
-    // Clear containers
     alertContainer.innerHTML = '';
     headerContent.innerHTML = '';
     firstRowOptionContainer.innerHTML = '';
 
-    // Show appropriate alert
+    // Show case-specific alert
     if (caseType === 'missing') {
         alertContainer.innerHTML = `
             <div class="alert alert-warning">
-                <strong>⚠️ Missing Headers Detected</strong>
-                <p>Some columns have no headers or generic names like "unnamed_1".</p>
-                <em>💡 You don't have to name all columns - only the ones you need. Unnamed columns will be preserved as-is.</em>
+                <span class="alert-icon">⚠</span>
+                <div class="alert-body">
+                    <strong>Missing Headers Detected</strong>
+                    <p>Some columns have no headers or generic names like <code>unnamed_1</code>.</p>
+                    <em>You don't have to name all columns — only the ones you need. Unnamed columns will be preserved as-is.</em>
+                </div>
             </div>
         `;
     } else if (caseType === 'suspicious') {
         alertContainer.innerHTML = `
             <div class="alert alert-warning">
-                <strong>⚠️ Suspicious Headers Detected</strong>
-                <p>The first row appears to contain data (emails, phones, or numbers) instead of header names.</p>
-                <em>💡 If the first row is actual data, check the box below. You can still rename columns.</em>
+                <span class="alert-icon">⚠</span>
+                <div class="alert-body">
+                    <strong>Suspicious Headers Detected</strong>
+                    <p>The first row appears to contain data (emails, phones, or numbers) instead of column names.</p>
+                    <em>If the first row is actual data, check the box below before confirming.</em>
+                </div>
             </div>
         `;
     }
 
-    // Instruction banner
-    const instructionBanner = `
+    const unnamedIndices = headerInfo.metadata?.unnamed_indices || [];
+    const columnCount = headerInfo.samples.length;
+
+    // Build table
+    let tableHTML = `
         <div class="instruction-banner">
-            <div class="instruction-banner-icon">📝</div>
-            <div class="instruction-banner-content">
-                <div class="instruction-banner-title">How to use this page:</div>
+            <span class="instruction-banner-icon">📋</span>
+            <div>
+                <div class="instruction-banner-title">How to use this page</div>
                 <div class="instruction-banner-text">
-                    Review the detected column names and sample data below. 
-                    Type new names in the white input boxes for columns you want to rename. 
-                    Leave inputs blank to keep the detected names. Then click "Submit & Continue Upload".
+                    Review detected column names and sample data below.
+                    Type a new name in any input cell to rename that column.
+                    Leave inputs blank to keep the detected name.
+                    When ready, click <strong>Confirm &amp; Ingest</strong>.
                 </div>
             </div>
         </div>
+
+        <div class="header-table-wrapper">
+        <table id="headerTable">
+        <colgroup>
+            <col style="width:52px">
+            ${headerInfo.samples.map((col, idx) => {
+                const w = columnWidths[idx] || getDefaultWidth(col.column_name);
+                return `<col style="width:${w}px">`;
+            }).join('')}
+        </colgroup>
     `;
 
-    // Build table HTML
-    let tableHTML = instructionBanner + `
-    <div class="header-table-wrapper">
-    <table id="headerTable">
-    <colgroup>
-        <col style="width:50px">
-        ${headerInfo.samples.map((col, idx) => {
-            const w = columnWidths[idx] || getDefaultWidth(col.column_name);
-            return `<col style="width:${w}px">`;
-        }).join('')}
-    </colgroup>
-    `;
-
-    // Column count
-    const columnCount = headerInfo.samples.length;
-    const unnamedIndices = headerInfo.metadata.unnamed_indices || [];
-
-    // ROW 1: Column indices (# 1, 2, 3...)
+    // Row 1: Column indices
     tableHTML += '<thead><tr class="index-row">';
-    tableHTML += '<th style="width: 50px; min-width: 50px;">#</th>';
-    
+    tableHTML += '<th style="width:52px; min-width:52px;">#</th>';
     headerInfo.samples.forEach((col, idx) => {
         tableHTML += `
             <th data-column="${col.column_name}" data-index="${idx}">
@@ -134,124 +159,102 @@ function renderHeaderUI() {
             </th>
         `;
     });
+    tableHTML += '</tr></thead><tbody>';
 
-    tableHTML += '</tr></thead>';
-
-    tableHTML += '<tbody>';
-
-    // ROW 2: Detected names
+    // Row 2: Detected names
     tableHTML += '<tr class="detected-row">';
     tableHTML += '<td>Detected</td>';
-    
     headerInfo.samples.forEach((col, idx) => {
         const isUnnamed = unnamedIndices.includes(idx);
-        const cellClass = isUnnamed ? 'unnamed' : '';
-        tableHTML += `<td class="${cellClass}">${col.column_name}</td>`;
+        tableHTML += `<td class="${isUnnamed ? 'unnamed' : ''}">${col.column_name}</td>`;
     });
     tableHTML += '</tr>';
 
-    // ROW 3: Input boxes
+    // Row 3: Input boxes
     tableHTML += '<tr class="input-row">';
-    tableHTML += '<td>📝</td>';
-    
+    tableHTML += '<td>✏</td>';
     headerInfo.samples.forEach((col, idx) => {
         const isUnnamed = unnamedIndices.includes(idx);
-        const placeholder = isUnnamed 
-            ? 'Enter name (optional)' 
-            : 'New name (optional)';
-        
         tableHTML += `
             <td id="input_cell_${idx}">
-                <input 
-                    type="text" 
-                    id="col_${idx}" 
-                    placeholder="${placeholder}"
+                <input
+                    type="text"
+                    id="col_${idx}"
+                    placeholder="${isUnnamed ? 'Name this column…' : 'Rename (optional)'}"
                     autocomplete="off"
+                    spellcheck="false"
                 >
             </td>
         `;
     });
     tableHTML += '</tr>';
 
-    // SECTION HEADER: Sample Data Preview
+    // Section divider
     tableHTML += `
         <tr class="preview-section-header">
-            <td colspan="${columnCount + 1}">
-                📊 Sample Data Preview (first 10 rows)
-            </td>
+            <td colspan="${columnCount + 1}">Sample Data Preview — first ${Math.min(10, Math.max(...headerInfo.samples.map(c => c.samples.length)))} rows</td>
         </tr>
     `;
 
-    // DATA ROWS: Show up to 10 sample rows
+    // Data rows
     const maxRows = Math.max(...headerInfo.samples.map(col => col.samples.length));
-    
     for (let rowIdx = 0; rowIdx < Math.min(maxRows, 10); rowIdx++) {
         tableHTML += '<tr class="data-row">';
         tableHTML += `<td>${rowIdx + 1}</td>`;
-        
-        headerInfo.samples.forEach((col) => {
-            const value = col.samples[rowIdx] || '';
-            const displayValue = value === '' ? '-' : value;
-            tableHTML += `<td title="${value}">${displayValue}</td>`;
+        headerInfo.samples.forEach(col => {
+            const value = col.samples[rowIdx] ?? '';
+            const display = value === '' ? '—' : value;
+            tableHTML += `<td title="${value}">${display}</td>`;
         });
-        
         tableHTML += '</tr>';
     }
 
     tableHTML += '</tbody></table>';
-    
-    // Resize line (hidden by default)
     tableHTML += '<div class="resize-line" id="resizeLine"></div>';
-    
     tableHTML += '</div>';
 
     headerContent.innerHTML = tableHTML;
 
-    // Add "first row is data" option for suspicious case
+    // "First row is data" for suspicious case
     if (caseType === 'suspicious') {
         firstRowOptionContainer.innerHTML = `
             <div class="first-row-option">
                 <div class="checkbox-container">
                     <input type="checkbox" id="firstRowIsData">
-                    <label for="firstRowIsData">
-                        ✓ Treat first row as data (not headers)
-                    </label>
+                    <label for="firstRowIsData">Treat first row as data, not headers</label>
                 </div>
+                <span class="first-row-option-hint">The current first row will be moved into the dataset</span>
             </div>
         `;
     }
 
-    // Attach event listeners
     attachInputListeners();
     attachResizeHandlers();
 }
 
 function attachInputListeners() {
-    const inputs = document.querySelectorAll('input[id^="col_"]');
-    
-    inputs.forEach(input => {
-        input.addEventListener('input', function() {
+    document.querySelectorAll('input[id^="col_"]').forEach(input => {
+        input.addEventListener('input', function () {
             const cell = this.closest('td');
-            
             if (this.value.trim() !== '') {
                 cell.classList.add('modified');
             } else {
                 cell.classList.remove('modified');
             }
+            updateRenamedCount();
         });
     });
 }
 
 function attachResizeHandlers() {
     const table = document.getElementById('headerTable');
+    if (!table) return;
+
     const handles = table.querySelectorAll('.resize-handle');
     const resizeLine = document.getElementById('resizeLine');
     const wrapper = document.querySelector('.header-table-wrapper');
 
-    if (!handles.length) return;
-
     let isResizing = false;
-    let currentTh = null;
     let currentIndex = null;
     let startX = 0;
     let startWidth = 0;
@@ -262,10 +265,10 @@ function attachResizeHandlers() {
             e.stopPropagation();
 
             isResizing = true;
-            currentTh = handle.closest('th');
-            currentIndex = parseInt(currentTh.dataset.index);
+            const th = handle.closest('th');
+            currentIndex = parseInt(th.dataset.index);
             startX = e.clientX;
-            startWidth = currentTh.offsetWidth;
+            startWidth = th.offsetWidth;
 
             const wrapperRect = wrapper.getBoundingClientRect();
             resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
@@ -280,26 +283,19 @@ function attachResizeHandlers() {
         if (!isResizing) return;
 
         const diff = e.clientX - startX;
-        const newWidth = Math.max(120, startWidth + diff);
+        const newWidth = Math.max(100, startWidth + diff);
 
-        // Update header column
         const col = table.querySelectorAll('col')[currentIndex + 1];
-        col.style.width = newWidth + 'px';
+        if (col) col.style.width = newWidth + 'px';
 
-        // Update all cells in this column
-        const columnIndex = currentIndex + 1; // +1 because first column is row number
-
-        // Store width
         columnWidths[currentIndex] = newWidth;
 
-        // Update resize line position
         const wrapperRect = wrapper.getBoundingClientRect();
         resizeLine.style.left = (e.clientX - wrapperRect.left + wrapper.scrollLeft) + 'px';
     });
 
     document.addEventListener('mouseup', () => {
         if (!isResizing) return;
-
         isResizing = false;
         resizeLine.classList.remove('active');
         document.body.style.cursor = 'default';
@@ -313,21 +309,20 @@ async function submitResolution() {
     const spinner = document.getElementById('submitSpinner');
     const text = document.getElementById('submitText');
 
-    // Prevent double submit
     if (submitBtn.disabled) return;
 
-    // Lock UI
     submitBtn.disabled = true;
     cancelBtn.disabled = true;
     spinner.style.display = 'inline-block';
     text.textContent = 'Processing…';
 
-    // Disable all inputs
-    const inputs = document.querySelectorAll('input[id^="col_"]');
-    inputs.forEach(input => input.disabled = true);
+    document.querySelectorAll('input[id^="col_"]').forEach(i => i.disabled = true);
+
+    // Update status text
+    const statusText = document.getElementById('actionStatusText');
+    if (statusText) statusText.textContent = 'Ingesting file, please wait…';
 
     try {
-        // Collect user mappings
         const userMapping = {};
         headerInfo.samples.forEach((col, idx) => {
             const input = document.getElementById(`col_${idx}`);
@@ -336,15 +331,11 @@ async function submitResolution() {
             }
         });
 
-        // Get first row checkbox state
         const firstRowIsData = document.getElementById('firstRowIsData')?.checked || false;
 
-        // Submit to backend
         const response = await authFetch(`/upload/${uploadId}/resolve-headers`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_mapping: userMapping,
                 first_row_is_data: firstRowIsData
@@ -356,59 +347,50 @@ async function submitResolution() {
             throw new Error(err.detail || 'Failed to resolve headers');
         }
 
-        // Success!
-        showAlert('success', '✓ Headers resolved successfully! Redirecting...');
+        showAlert('success', 'Headers resolved successfully. Redirecting to dashboard…');
 
-        // Redirect after short delay
         setTimeout(() => {
             window.location.href = '/';
         }, 1500);
 
     } catch (error) {
-        // Unlock UI on error
         submitBtn.disabled = false;
         cancelBtn.disabled = false;
         spinner.style.display = 'none';
-        text.textContent = 'Submit & Continue Upload';
-        inputs.forEach(input => input.disabled = false);
-
+        text.textContent = 'Confirm & Ingest';
+        document.querySelectorAll('input[id^="col_"]').forEach(i => i.disabled = false);
+        if (statusText) statusText.textContent = 'Review columns above, then confirm to continue.';
         showAlert('error', error.message);
     }
 }
 
 function cancelResolution() {
-    if (confirm('Are you sure you want to cancel? The upload will be deleted.')) {
-        // TODO: Call delete endpoint if available
+    if (confirm('Cancel this upload? The file will not be saved.')) {
         window.location.href = '/';
     }
 }
 
 function showAlert(type, message) {
     const alertContainer = document.getElementById('alertContainer');
-    
-    let alertClass = 'alert-info';
-    let icon = 'ℹ️';
-    
-    if (type === 'error') {
-        alertClass = 'alert-warning';
-        icon = '⚠️';
-    } else if (type === 'success') {
-        alertClass = 'alert-success';
-        icon = '✓';
-    }
-    
+
+    const iconMap = { error: '⚠', success: '✓', info: 'ℹ' };
+    const classMap = { error: 'alert-warning', success: 'alert-success', info: 'alert-info' };
+
     alertContainer.innerHTML = `
-        <div class="alert ${alertClass}">
-            ${icon} ${message}
+        <div class="alert ${classMap[type] || 'alert-info'}">
+            <span class="alert-icon">${iconMap[type] || 'ℹ'}</span>
+            <div class="alert-body">
+                <p>${message}</p>
+            </div>
         </div>
     `;
 
-    // Scroll to top to show alert
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// ── Init ──
 if (!uploadId) {
-    showAlert('error', 'No upload ID provided');
+    showAlert('error', 'No upload ID provided. Please return to the dashboard and try again.');
 } else {
     loadHeaders();
 }

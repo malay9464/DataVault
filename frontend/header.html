@@ -3,47 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resolve Headers - Data Vault</title>
+    <title>Resolve Headers – Data Vault</title>
     <link rel="stylesheet" href="/static/css/header.css">
 </head>
 <body>
-    <div class="container">
-        <!-- FILE BAR -->
-        <div class="file-bar">
-            <span class="file-indicator"></span>
-            <span>Resolve Headers</span>
+
+<!-- TOP NAV -->
+<nav class="top-nav">
+    <a href="/" class="nav-brand">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>
+        Data Vault
+        <span class="sep">/</span>
+        <span class="page-name">Resolve Headers</span>
+    </a>
+
+    <button class="nav-back" onclick="cancelResolution()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+        </svg>
+        Cancel Upload
+    </button>
+</nav>
+
+<!-- MAIN CONTAINER -->
+<div class="container">
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+        <div class="page-header-inner">
+            <div class="page-title-block">
+                <span class="page-tag">
+                    <span class="dot"></span>
+                    Header Resolution Required
+                </span>
+                <h1 class="page-title">Review Column Structure</h1>
+                <p class="page-subtitle" id="pageSubtitle">
+                    Loading file info...
+                </p>
+            </div>
         </div>
+    </div>
 
-        <!-- ALERT CONTAINER -->
-        <div id="alertContainer"></div>
+    <!-- ALERT CONTAINER -->
+    <div id="alertContainer"></div>
 
-        <!-- HEADER CONTENT (dynamically filled) -->
-        <div id="headerContent"></div>
+    <!-- HEADER CONTENT (table injected here) -->
+    <div id="headerContent"></div>
 
-        <!-- FIRST ROW OPTION (for suspicious case) -->
-        <div id="firstRowOptionContainer"></div>
+    <!-- FIRST ROW OPTION (for suspicious case) -->
+    <div id="firstRowOptionContainer"></div>
 
-        <!-- ACTION BUTTONS -->
-        <div class="action-buttons">
-            <button 
-                class="btn btn-primary" 
-                id="submitBtn"
-                onclick="submitResolution()"
-            >
-                <span id="submitText">Submit & Continue Upload</span>
-                <span id="submitSpinner" class="spinner" style="display:none;"></span>
+    <!-- ACTION BAR -->
+    <div class="action-bar">
+        <div class="action-bar-left">
+            <span class="action-bar-label">Ready to ingest</span>
+            <span class="action-bar-status">
+                <span id="renamedCount" class="status-count">0 columns renamed</span>
+                <span id="actionStatusText">Review columns above, then confirm to continue.</span>
+            </span>
+        </div>
+        <div class="action-bar-right">
+            <button class="btn btn-ghost" id="cancelBtn" onclick="cancelResolution()">
+                Discard &amp; Cancel
             </button>
-
-            <button 
-                class="btn btn-secondary" 
-                id="cancelBtn"
-                onclick="cancelResolution()"
-            >
-                Cancel
+            <button class="btn btn-primary" id="submitBtn" onclick="submitResolution()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span id="submitText">Confirm &amp; Ingest</span>
+                <span id="submitSpinner" class="spinner" style="display:none;"></span>
             </button>
         </div>
     </div>
 
-    <script src="/static/js/header.js"></script>
+</div>
+
+<script src="/static/js/header.js"></script>
 </body>
 </html>
