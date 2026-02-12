@@ -13,8 +13,9 @@ let selectedFile = null;
 let categoriesCache = [];
 let allUploads = [];
 let filteredUploads = [];
-const PAGE_SIZE = 10;
 let selectedUserId = null;
+let selectedCategoryId = null;
+const PAGE_SIZE = 10;
 
 // DOM Elements
 const fileInput = document.getElementById("fileInput");
@@ -345,15 +346,96 @@ async function loadAdminUserList() {
     });
 }
 
+async function loadUserCategories(userId) {
+    const res = await authFetch(`/categories?user_id=${userId}`);
+    if (!res || !res.ok) return;
+
+    const cats = await res.json();
+
+    removeUserCategoryBar();
+
+    if (cats.length === 0) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "userCategoryBar";
+    wrapper.style.cssText = `
+        padding: 8px 0 4px 0;
+        position: relative;
+    `;
+
+    wrapper.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px; padding: 0 0 8px 0;">
+            <span style="font-size:12px; font-weight:600; color:#64748b;
+                         text-transform:uppercase; letter-spacing:0.5px;">
+                Category
+            </span>
+            <div style="position:relative; flex:1;">
+                <select id="adminCatDropdown"
+                    onchange="filterByCategoryDropdown(this)"
+                    style="
+                        width: 100%;
+                        padding: 7px 32px 7px 12px;
+                        border: 1.5px solid #e2e8f0;
+                        border-radius: 8px;
+                        background: #fff;
+                        color: #374151;
+                        font-size: 13px;
+                        font-weight: 500;
+                        cursor: pointer;
+                        appearance: none;
+                        outline: none;
+                        transition: border-color 0.15s;
+                    "
+                >
+                    <option value="">All Categories</option>
+                    ${cats.map(c => `
+                        <option value="${c.id}">
+                            ${c.name} (${c.uploads})
+                        </option>
+                    `).join("")}
+                </select>
+                <svg style="position:absolute; right:10px; top:50%;
+                            transform:translateY(-50%); pointer-events:none;
+                            color:#64748b;"
+                     width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </div>
+        </div>
+    `;
+
+    // Insert before search box
+    const searchContainer = document.querySelector(".search-container");
+    if (searchContainer) {
+        searchContainer.parentNode.insertBefore(wrapper, searchContainer);
+    }
+}
+
+function removeUserCategoryBar() {
+    const existing = document.getElementById("userCategoryBar");
+    if (existing) existing.remove();
+}
+
+function filterByCategoryDropdown(select) {
+    selectedCategoryId = select.value ? parseInt(select.value) : null;
+    page = 1;
+    loadUploads();
+}
+
 function filterByUser(userId, el) {
     selectedUserId = userId;
+    selectedCategoryId = null;
     currentFilter = "all";
     page = 1;
+
+    removeUserCategoryBar();
 
     document.querySelectorAll(".category")
         .forEach(c => c.classList.remove("active"));
     el.classList.add("active");
 
+    loadUserCategories(userId);
     loadUploads();
 }
 
@@ -368,6 +450,10 @@ function toggleAdvancedFilters() {
 function applyFilter(type, el) {
     currentFilter = type;
     selectedUserId = null;
+    selectedCategoryId = null;
+
+    removeUserCategoryBar();
+
     page = 1;
     updateURL();
     searchInput.value = "";
@@ -621,26 +707,25 @@ async function loadUploads(showSkeleton = false) {
 
     const params = new URLSearchParams();
 
-    // Admin: filter by selected user
     if (currentUser.role === "admin" && selectedUserId) {
         params.append("created_by_user_id", selectedUserId);
     }
 
-    // Category / uncat filter — works for both roles
-    if (currentFilter === "uncat") {
-        // fetch all categories to find uncategorized id
-        const uncatEntry = categoriesCache.find(
-            c => c.name.toLowerCase() === "uncategorized"
-        );
-        if (uncatEntry) {
-            params.append("category_id", uncatEntry.id);
-        }
-    } else if (currentFilter !== "all") {
-        // numeric category id
-        params.append("category_id", currentFilter);
+    if (currentUser.role === "admin" && selectedCategoryId) {
+        params.append("category_id", selectedCategoryId);
     }
 
-    // Advanced search params
+    if (currentUser.role !== "admin") {
+        if (currentFilter === "uncat") {
+            const uncatEntry = categoriesCache.find(
+                c => c.name.toLowerCase() === "uncategorized"
+            );
+            if (uncatEntry) params.append("category_id", uncatEntry.id);
+        } else if (currentFilter !== "all") {
+            params.append("category_id", currentFilter);
+        }
+    }
+
     const adv = buildSearchParams();
     if (adv) {
         adv.split("&").forEach(p => {
@@ -666,30 +751,31 @@ async function loadUploads(showSkeleton = false) {
         tableSkeleton.style.display = "none";
 
         if (filteredUploads.length === 0) {
-        tableWrapper.style.display = "none";
+            tableWrapper.style.display = "none";
 
-        const hasAdvancedFilter = (
-            (totalMin && totalMin.value) ||
-            (totalMax && totalMax.value) ||
-            (dupMin && dupMin.value) ||
-            (dupMax && dupMax.value) ||
-            (dateFrom && dateFrom.value) ||
-            (dateTo && dateTo.value) ||
-            (searchInput && searchInput.value.trim())
-        );
+            const hasAdvancedFilter = (
+                (totalMin && totalMin.value) ||
+                (totalMax && totalMax.value) ||
+                (dupMin && dupMin.value) ||
+                (dupMax && dupMax.value) ||
+                (dateFrom && dateFrom.value) ||
+                (dateTo && dateTo.value) ||
+                (searchInput && searchInput.value.trim())
+            );
 
-        const emptyMsg = document.getElementById("emptyMessage");
-        const emptyReset = document.getElementById("emptyReset");
+            const emptyMsg = document.getElementById("emptyMessage");
+            const emptyReset = document.getElementById("emptyReset");
 
-        if (hasAdvancedFilter) {
-            if (emptyMsg) emptyMsg.textContent = "No uploads match your filters";
-            if (emptyReset) emptyReset.style.display = "inline-block";
-        } else {
-            if (emptyMsg) emptyMsg.textContent = "No files have been uploaded yet";
-            if (emptyReset) emptyReset.style.display = "none";
-        }
+            if (hasAdvancedFilter) {
+                if (emptyMsg) emptyMsg.textContent = "No uploads match your filters";
+                if (emptyReset) emptyReset.style.display = "inline-block";
+            } else {
+                if (emptyMsg) emptyMsg.textContent = "No files have been uploaded yet";
+                if (emptyReset) emptyReset.style.display = "none";
+            }
 
-        emptyState.style.display = "block";
+            emptyState.style.display = "block";
+
         } else {
             emptyState.style.display = "none";
             tableWrapper.style.display = "block";

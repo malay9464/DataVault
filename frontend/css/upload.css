@@ -1334,3 +1334,45 @@ td:not(:first-child) {
     cursor: not-allowed;
     pointer-events: none;
 }
+
+/* Category filter pills */
+.cat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1.5px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.cat-pill:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+    background: #f5f3ff;
+}
+
+.cat-pill.active {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+    font-weight: 600;
+}
+
+.pill-count {
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 999px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cat-pill.active .pill-count {
+    background: rgba(255, 255, 255, 0.25);
+}

@@ -188,17 +188,33 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 @app.get("/categories")
-def list_categories(current_user: dict = Depends(get_current_user)):
+def list_categories(
+    user_id: int | None = None,
+    current_user: dict = Depends(get_current_user)
+):
     with engine.begin() as conn:
         if current_user["role"] == "admin":
-            rows = conn.execute(text("""
-                SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
-                       c.created_by_user_id
-                FROM categories c
-                LEFT JOIN upload_log u ON u.category_id = c.id
-                GROUP BY c.id
-                ORDER BY c.name
-            """)).fetchall()
+            if user_id:
+                # Admin requesting a specific user's categories
+                rows = conn.execute(text("""
+                    SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
+                           c.created_by_user_id
+                    FROM categories c
+                    LEFT JOIN upload_log u ON u.category_id = c.id
+                    WHERE c.created_by_user_id = :uid
+                    GROUP BY c.id
+                    ORDER BY c.name
+                """), {"uid": user_id}).fetchall()
+            else:
+                # Admin requesting all categories
+                rows = conn.execute(text("""
+                    SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
+                           c.created_by_user_id
+                    FROM categories c
+                    LEFT JOIN upload_log u ON u.category_id = c.id
+                    GROUP BY c.id
+                    ORDER BY c.name
+                """)).fetchall()
         else:
             rows = conn.execute(text("""
                 SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
