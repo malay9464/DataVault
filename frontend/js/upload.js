@@ -488,7 +488,6 @@ async function upload() {
         showToast("Please select a file", "warn");
         return;
     }
-
     if (!categorySelect.value) {
         showToast("Please select a category", "warn");
         return;
@@ -500,40 +499,71 @@ async function upload() {
     btn.disabled = true;
     spinner.style.display = "inline-block";
     uploadProgress.style.display = "block";
-
     fileInput.disabled = true;
     uploadBox.classList.add("disabled");
 
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress > 90) progress = 90;
-        progressFill.style.width = progress + "%";
-        progressText.textContent = `Uploading... ${Math.round(progress)}%`;
-    }, 200);
+    progressFill.style.width = "0%";
+    progressText.textContent = "Starting...";
 
+    // 1. Generate upload_id client-side to open SSE before POST
+    const uploadId = Date.now() * 1000;
+
+    // 2. Open SSE stream first
+    const sseUrl = `/upload-progress/${uploadId}?token=${localStorage.getItem("access_token")}`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onmessage = (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            const pct = data.percent || 0;
+
+            progressFill.style.width = pct + "%";
+            progressText.textContent = data.message || `${pct}%`;
+
+            if (data.status === "done") {
+                progressFill.style.width = "100%";
+                eventSource.close();
+            }
+
+            if (data.status === "error") {
+                eventSource.close();
+                showToast(data.message || "Upload failed", "error");
+                uploadProgress.style.display = "none";
+                resetUploadState();
+            }
+        } catch (err) {
+            console.error("SSE parse error:", err);
+        }
+    };
+
+    eventSource.onerror = () => {
+        eventSource.close();
+    };
+
+    // 3. Fire the upload POST
     try {
         const fd = new FormData();
         fd.append("file", selectedFile);
 
         const res = await authFetch(
-            `/upload?category_id=${categorySelect.value}`,
+            `/upload?category_id=${categorySelect.value}&upload_id_hint=${uploadId}`,
             { method: "POST", body: fd }
         );
 
-        clearInterval(progressInterval);
-        progressFill.style.width = "100%";
-        progressText.textContent = "Processing...";
+        eventSource.close();
 
         if (res.status === 409) {
             showToast("File already uploaded", "error");
             uploadProgress.style.display = "none";
+            resetUploadState();
             return;
         }
 
         if (!res.ok) {
-            showToast("Upload failed", "error");
+            const err = await res.json().catch(() => ({}));
+            showToast(err.detail || "Upload failed", "error");
             uploadProgress.style.display = "none";
+            resetUploadState();
             return;
         }
 
@@ -541,6 +571,7 @@ async function upload() {
 
         if (result.success === false && result.status === 'pending_headers') {
             showToast("Headers need review. Redirecting...", "warn", 2000);
+            uploadProgress.style.display = "none";
             setTimeout(() => {
                 window.location.href = `/header.html?upload_id=${result.upload_id}`;
             }, 2000);
@@ -548,34 +579,49 @@ async function upload() {
         }
 
         if (result.success) {
-            showToast("Upload successful! ✨", "success");
+            progressFill.style.width = "100%";
+            progressText.textContent = `Done! ${result.total_records?.toLocaleString() || ""} records processed.`;
 
-            selectedFile = null;
-            fileInput.value = "";
-            fileName.innerText = "";
-            fileName.style.display = "none";
-            uploadBox.style.borderColor = "";
-            uploadBox.style.background = "";
-            uploadProgress.style.display = "none";
-            progressFill.style.width = "0%";
-
-            loadCategories();
-            loadUploads();
+            setTimeout(() => {
+                showToast("Upload successful! ✨", "success");
+                uploadProgress.style.display = "none";
+                progressFill.style.width = "0%";
+                clearUploadFields();
+                loadCategories();
+                loadUploads();
+            }, 1000);
         }
 
     } catch (err) {
-        clearInterval(progressInterval);
+        eventSource.close();
         console.error(err);
         showToast("Network error", "error");
         uploadProgress.style.display = "none";
+        resetUploadState();
     } finally {
         spinner.style.display = "none";
-
         fileInput.disabled = false;
         uploadBox.classList.remove("disabled");
-
         checkUploadReady();
     }
+}
+
+function clearUploadFields() {
+    selectedFile = null;
+    fileInput.value = "";
+    fileName.innerText = "";
+    fileName.style.display = "none";
+    uploadBox.style.borderColor = "";
+    uploadBox.style.background = "";
+}
+
+function resetUploadState() {
+    clearUploadFields();
+    document.getElementById("uploadBtn").disabled = false;
+    document.getElementById("uploadSpinner").style.display = "none";
+    fileInput.disabled = false;
+    uploadBox.classList.remove("disabled");
+    checkUploadReady();
 }
 
 // ========== USER MANAGEMENT ==========

@@ -26,7 +26,13 @@ from auth import authenticate_user, create_access_token, get_current_user
 from permissions import can_delete_upload, can_access_upload, admin_only
 from security import hash_password
 from reportlab.lib.pagesizes import A4
+from fastapi.responses import StreamingResponse
 from reportlab.pdfgen import canvas
+from collections import defaultdict
+import asyncio
+
+# In-memory progress store: upload_id -> progress dict
+upload_progress_store: dict = {}
 
 class HeaderResolutionRequest(BaseModel):
     user_mapping: Dict[int, str] = {}
@@ -231,43 +237,83 @@ def list_categories(
         for r in rows
     ]
 
+@app.get("/upload-progress/{upload_id}")
+async def upload_progress_stream(
+    upload_id: int,
+    token: str = Query(...)
+):
+    """SSE progress stream. Token passed as query param (EventSource limitation)."""
+    # Validate token manually
+    try:
+        from auth import SECRET_KEY, ALGORITHM
+        import jwt as pyjwt
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("No user_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    async def event_stream():
+        timeout = 0
+        while timeout < 300:
+            progress = upload_progress_store.get(upload_id)
+
+            if progress:
+                yield f"data: {json.dumps(progress)}\n\n"
+                if progress.get("status") in ("done", "error"):
+                    upload_progress_store.pop(upload_id, None)
+                    break
+            else:
+                yield f"data: {json.dumps({'percent': 0, 'status': 'waiting', 'message': 'Waiting...'})}\n\n"
+
+            await asyncio.sleep(0.5)
+            timeout += 0.5
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive"
+        }
+    )
+
 @app.post("/upload")
 async def upload_file(
     category_id: int = Query(...),
+    upload_id_hint: int = Query(None),
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user)
 ):
-    # ---------- ADMIN BLOCK ----------
     if user["role"] == "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Admins cannot upload files"
-        )
+        raise HTTPException(status_code=403, detail="Admins cannot upload files")
 
     contents = await file.read()
     original_filename = file.filename
     name = original_filename.lower()
 
-    # ---------- FILENAME DUPLICATE CHECK (CASE-SENSITIVE) ----------
     with engine.begin() as conn:
         exists = conn.execute(
             text("""
-                SELECT 1
-                FROM upload_log
-                WHERE filename = :fname
-                  AND created_by_user_id = :uid
+                SELECT 1 FROM upload_log
+                WHERE filename = :fname AND created_by_user_id = :uid
                 LIMIT 1
             """),
             {"fname": original_filename, "uid": user["id"]}
         ).scalar()
 
     if exists:
-        raise HTTPException(
-            status_code=409,
-            detail="File with the same name already exists"
-        )
+        raise HTTPException(status_code=409, detail="File with the same name already exists")
 
-    upload_id = int(time.time() * 1000000)
+    upload_id = upload_id_hint if upload_id_hint else int(time.time() * 1000000)
+    # ── PROGRESS: reading file ──
+    upload_progress_store[upload_id] = {
+        "percent": 5,
+        "status": "processing",
+        "message": "Reading file..."
+    }
 
     if name.endswith(".csv"):
         try:
@@ -277,7 +323,15 @@ async def upload_file(
     elif name.endswith(".xls") or name.endswith(".xlsx"):
         preview_df = pd.read_excel(io.BytesIO(contents), nrows=100)
     else:
+        upload_progress_store.pop(upload_id, None)
         raise HTTPException(status_code=400, detail="Unsupported file")
+
+    # ── PROGRESS: detecting headers ──
+    upload_progress_store[upload_id] = {
+        "percent": 10,
+        "status": "processing",
+        "message": "Detecting headers..."
+    }
 
     case_type, metadata = detect_header_case(preview_df)
     column_samples = get_column_samples(preview_df)
@@ -308,6 +362,8 @@ async def upload_file(
         with open(temp_meta_path, 'w') as f:
             json.dump(temp_metadata, f)
 
+        upload_progress_store.pop(upload_id, None)
+
         return {
             "success": False,
             "status": "pending_headers",
@@ -321,6 +377,13 @@ async def upload_file(
     duplicate_records = 0
     seen_hashes = set()
 
+    # ── PROGRESS: drop index ──
+    upload_progress_store[upload_id] = {
+        "percent": 15,
+        "status": "processing",
+        "message": "Preparing database..."
+    }
+
     with engine.connect() as conn:
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
@@ -331,8 +394,32 @@ async def upload_file(
         except UnicodeDecodeError:
             return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
 
+    # ── CSV: get total rows for real percentage ──
     if name.endswith(".csv"):
+        # Count total rows first (fast pass)
+        upload_progress_store[upload_id] = {
+            "percent": 18,
+            "status": "processing",
+            "message": "Counting rows..."
+        }
+        try:
+            row_count_df = pd.read_csv(
+                io.BytesIO(contents),
+                usecols=[0],
+                encoding="utf-8"
+            )
+        except UnicodeDecodeError:
+            row_count_df = pd.read_csv(
+                io.BytesIO(contents),
+                usecols=[0],
+                encoding="latin1"
+            )
+        estimated_total = len(row_count_df)
+        del row_count_df
+
         reader = csv_chunk_reader()
+        rows_processed = 0
+
         for chunk in reader:
             total_records += len(chunk)
             chunk = normalize_dataframe(chunk)
@@ -343,29 +430,87 @@ async def upload_file(
             chunk = chunk.drop(columns=["__hash"])
             copy_cleaned_data(engine, upload_id, chunk)
 
+            rows_processed += len(chunk)
+
+            # Real percentage: 20% to 85% during ingestion
+            if estimated_total > 0:
+                ingest_pct = rows_processed / estimated_total
+                percent = int(20 + ingest_pct * 65)
+                percent = min(percent, 85)
+            else:
+                percent = 50
+
+            upload_progress_store[upload_id] = {
+                "percent": percent,
+                "status": "processing",
+                "message": f"Processing {rows_processed:,} / {estimated_total:,} rows..."
+            }
+
     elif name.endswith(".xls") or name.endswith(".xlsx"):
+        # ── PROGRESS: loading excel ──
+        upload_progress_store[upload_id] = {
+            "percent": 20,
+            "status": "processing",
+            "message": "Loading Excel file..."
+        }
+
         df = pd.read_excel(io.BytesIO(contents))
         total_records = len(df)
+
+        upload_progress_store[upload_id] = {
+            "percent": 40,
+            "status": "processing",
+            "message": f"Normalizing {total_records:,} rows..."
+        }
+
         df = normalize_dataframe(df)
+
+        upload_progress_store[upload_id] = {
+            "percent": 60,
+            "status": "processing",
+            "message": "Removing duplicates..."
+        }
+
         df = df.drop_duplicates()
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
         duplicate_records = total_records - len(df)
         df = df.drop(columns=["__hash"])
+
+        upload_progress_store[upload_id] = {
+            "percent": 75,
+            "status": "processing",
+            "message": "Saving to database..."
+        }
+
         copy_cleaned_data(engine, upload_id, df)
 
     else:
+        upload_progress_store.pop(upload_id, None)
         raise HTTPException(status_code=400, detail="Unsupported file")
 
     if name.endswith(".csv"):
         duplicate_records = total_records - len(seen_hashes)
 
+    # ── PROGRESS: rebuilding index ──
+    upload_progress_store[upload_id] = {
+        "percent": 88,
+        "status": "processing",
+        "message": "Rebuilding index..."
+    }
+
     with engine.connect() as conn:
         conn.execute(text("""
-            CREATE INDEX idx_cleaned_data_upload_id
-            ON cleaned_data(upload_id)
+            CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)
         """))
         conn.commit()
+
+    # ── PROGRESS: saving log ──
+    upload_progress_store[upload_id] = {
+        "percent": 95,
+        "status": "processing",
+        "message": "Saving upload record..."
+    }
 
     final_headers = {'columns': [str(c) for c in preview_df.columns]}
 
@@ -397,9 +542,18 @@ async def upload_file(
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
 
+    # ── PROGRESS: done ──
+    upload_progress_store[upload_id] = {
+        "percent": 100,
+        "status": "done",
+        "message": f"Done! {total_records:,} records processed."
+    }
+
     return {
         "success": True,
-        "upload_id": upload_id
+        "upload_id": upload_id,
+        "total_records": total_records,
+        "duplicate_records": duplicate_records
     }
 
 @app.get("/upload/{upload_id}/headers")
