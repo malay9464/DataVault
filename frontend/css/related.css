@@ -402,9 +402,8 @@
 
 .group-table-scroll table {
     border-collapse: collapse;
-    table-layout: fixed;
-    min-width: max-content;
-    width: 100%;
+    table-layout: auto;      /* ← was fixed, change to auto */
+    width: auto;
 }
 
 .group-table-scroll th {
@@ -413,14 +412,18 @@
     background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: white;
     font-weight: 600;
-    padding: 12px 14px;
+    padding: 10px 12px;
     white-space: nowrap;
-    min-width: 140px;
+    width: 1%;               /* ← shrink to content */
+    min-width: 0;            /* ← no forced minimum */
+    max-width: 160px;        /* ← cap maximum */
     text-align: left;
-    font-size: 13px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     border-right: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .group-table-scroll th:last-child {
@@ -428,14 +431,16 @@
 }
 
 .group-table-scroll td {
-    padding: 12px 14px;
+    padding: 10px 12px;
     white-space: nowrap;
-    min-width: 140px;
+    width: 1%;               /* ← shrink to content */
+    min-width: 0;            /* ← no forced minimum */
+    max-width: 160px;        /* ← cap maximum */
     overflow: hidden;
     text-overflow: ellipsis;
     border-right: 1px solid #e5e7eb;
     border-bottom: 1px solid #f3f4f6;
-    font-size: 17px;
+    font-size: 13px;         /* ← also fix 17px typo */
     color: #374151;
 }
 

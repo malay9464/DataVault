@@ -248,22 +248,6 @@ function toggleGroup(groupId) {
     expandIcon.classList.toggle('collapsed');
 }
 
-function getDefaultWidth(columnName) {
-    const col = columnName.toLowerCase();
-
-    if (col.includes('email') || col.includes('mail')) return 180;
-    if (col.includes('phone') || col.includes('mobile')) return 120;
-    if (col.includes('name')) return 180;
-    if (col.includes('address') || col.includes('description')) return 180;
-    if (col.includes('id') || col.includes('code')) return 120;
-    if (col.includes('city') || col.includes('state') || col.includes('zip')) return 100;
-    if (col.includes('date') || col.includes('time')) return 110;
-    if (col.includes('website') || col.includes('url')) return 160;
-    if (col.includes('street') || col.includes('add')) return 160;
-
-    return 150;
-}
-
 function renderGroupTable(records) {
     if (records.length === 0) return '<p style="padding: 20px; text-align: center; color: #9ca3af;">No records</p>';
 
@@ -273,14 +257,13 @@ function renderGroupTable(records) {
     let html = `
         <div class="group-table-scroll">
             <div class="resize-line"></div>
-            <table style="width: auto;">
+            <table>
     `;
 
     html += '<thead><tr>';
     columns.forEach((col, index) => {
-        const width = getDefaultWidth(col);
         html += `
-            <th data-index="${index}" style="width:${width}px; min-width:${width}px;">
+            <th data-index="${index}">
                 ${col}
                 <div class="resize-handle"></div>
             </th>
@@ -296,17 +279,13 @@ function renderGroupTable(records) {
             if (value === null || value === undefined || value === "") {
                 value = "-";
             }
-            const width = getDefaultWidth(col);
-            html += `<td style="width:${width}px; min-width:${width}px;">${value}</td>`;
+            html += `<td>${value}</td>`;
         });
         html += '</tr>';
     });
     html += '</tbody>';
 
-    html += `
-            </table>
-        </div>
-    `;
+    html += `</table></div>`;
     return html;
 }
 
