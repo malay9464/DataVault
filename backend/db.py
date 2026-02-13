@@ -1,51 +1,59 @@
 from sqlalchemy import create_engine
 import psycopg2
+import io
+import json
+import re
+import numpy as np
+import pandas as pd
 
 DATABASE_URL = "postgresql://postgres:635343@localhost:5432/50_data"
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
 )
 
-import io
-import json
-import pandas as pd
-import csv
-import numpy as np
+def clean_string(v):
+    """Remove control characters that break JSON in PostgreSQL."""
+    if isinstance(v, str):
+        # Strip ASCII control chars (0x00-0x1F) except tab(\x09) and newline(\x0a)
+        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
+    return v
 
 def copy_cleaned_data(engine, upload_id: int, df: pd.DataFrame):
+    """High-speed bulk insert using PostgreSQL COPY CSV format."""
     raw_conn = engine.raw_connection()
-    raw_conn.set_session(autocommit=True)
-    cursor = raw_conn.cursor()
+    try:
+        raw_conn.set_session(autocommit=True)
+        cursor = raw_conn.cursor()
 
-    buffer = io.StringIO()
+        df = df.replace({np.nan: None})
 
-    df = df.replace({np.nan: None})
+        buffer = io.StringIO()
+        for row_data in df.to_dict(orient="records"):
+            # Clean control characters from string values
+            cleaned = {k: clean_string(v) for k, v in row_data.items()}
 
-    df["upload_id"] = upload_id
+            # Serialize to JSON — json.dumps handles all backslash escaping correctly
+            json_str = json.dumps(cleaned, ensure_ascii=False, default=str)
 
-    # Safe JSON serialization (no NaN possible now)
-    df["row_data"] = df.drop(columns=["upload_id"]).apply(
-        lambda r: json.dumps(r.to_dict(), allow_nan=False, default=str),
-        axis=1
-    )
+            # Use CSV format: wrap the JSON in double quotes,
+            # escape any double quotes inside by doubling them
+            # This is the standard CSV quoting rule — no backslash interpretation
+            json_csv = '"' + json_str.replace('"', '""') + '"'
 
-    export_df = df[["upload_id", "row_data"]]
+            buffer.write(f"{upload_id}\t{json_csv}\n")
 
-    export_df.to_csv(
-        buffer,
-        index=False,
-        header=False,
-        quoting=csv.QUOTE_MINIMAL
-    )
+        buffer.seek(0)
 
-    buffer.seek(0)
+        # FORMAT CSV with tab delimiter — backslashes in data are safe
+        cursor.copy_expert(
+            "COPY cleaned_data (upload_id, row_data) FROM STDIN WITH (FORMAT CSV, DELIMITER E'\\t', QUOTE '\"')",
+            buffer
+        )
 
-    cursor.copy_expert(
-        "COPY cleaned_data (upload_id, row_data) FROM STDIN WITH (FORMAT CSV)",
-        buffer
-    )
-
-    cursor.close()
-    raw_conn.close()
+        cursor.close()
+    finally:
+        raw_conn.close()

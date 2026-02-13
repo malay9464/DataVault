@@ -30,6 +30,8 @@ from fastapi.responses import StreamingResponse
 from reportlab.pdfgen import canvas
 from collections import defaultdict
 import asyncio
+import hashlib
+import python_calamine
 
 # In-memory progress store: upload_id -> progress dict
 upload_progress_store: dict = {}
@@ -128,7 +130,6 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    # Normalize column names once
     df.columns = [
         c.strip().lower().replace(" ", "_").replace("-", "_")
         for c in df.columns
@@ -140,7 +141,6 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             email_cols = [c]
             break
 
-    # Phone: exact match only, "contact" alone is NOT a phone field
     phone_cols = []
     for c in df.columns:
         if c in {"phone", "phone_no", "phone_number", "mobile", "mobile_no",
@@ -151,50 +151,34 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if not phone_cols:
         phone_cols = [c for c in df.columns if "phone" in c or "mobile" in c]
 
-    # Name: exact match only, "companyname" / "contactperson" are NOT name fields
     name_cols = []
     for c in df.columns:
         if c in {"name", "full_name", "fullname", "customer_name",
-                 "client_name", "first_name", "last_name", "person_name", "username"}:
+                 "client_name", "first_name", "last_name",
+                 "person_name", "username"}:
             name_cols = [c]
             break
 
-    def clean_email(v):
-        if pd.isna(v): return None
-        return str(v).strip().lower()
-
-    def clean_phone(v):
-        if pd.isna(v): return None
-        return "".join(c for c in str(v) if c.isdigit())
-
-    def clean_name(v):
-        if pd.isna(v): return None
-        return str(v).strip().lower()
-
-    # Only create canonical columns if source columns were found
+    # VECTORIZED — no apply(axis=1)
     if email_cols:
-        df["email"] = df[email_cols].apply(
-            lambda r: next((clean_email(v) for v in r if pd.notna(v)), None), axis=1
-        )
+        df["email"] = df[email_cols[0]].astype(str).str.strip().str.lower()
+        df["email"] = df["email"].where(df[email_cols[0]].notna(), None)
 
     if phone_cols:
-        df["phone"] = df[phone_cols].apply(
-            lambda r: next((clean_phone(v) for v in r if pd.notna(v)), None), axis=1
+        df["phone"] = df[phone_cols[0]].astype(str).str.replace(
+            r"[^\d]", "", regex=True
         )
+        df["phone"] = df["phone"].where(df[phone_cols[0]].notna(), None)
 
     if name_cols:
-        df["name"] = df[name_cols].apply(
-            lambda r: next((clean_name(v) for v in r if pd.notna(v)), None), axis=1
-        )
+        df["name"] = df[name_cols[0]].astype(str).str.strip().str.lower()
+        df["name"] = df["name"].where(df[name_cols[0]].notna(), None)
 
-    # Drop only the source columns that were mapped, never drop canonical ones,
-    # and never drop columns that don't exist in df
     columns_to_drop = set(email_cols + phone_cols + name_cols)
     columns_to_drop.discard("email")
     columns_to_drop.discard("phone")
     columns_to_drop.discard("name")
     columns_to_drop = columns_to_drop & set(df.columns)
-
     df = df.drop(columns=list(columns_to_drop))
 
     return df
@@ -422,7 +406,7 @@ async def upload_file(
             total_records += len(chunk)
             chunk = normalize_dataframe(chunk)
             chunk = chunk.drop_duplicates()
-            chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
+            chunk["__hash"] = pd.util.hash_pandas_object(chunk, index=False).astype(str)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
             seen_hashes.update(chunk["__hash"])
             chunk = chunk.drop(columns=["__hash"])
@@ -450,7 +434,10 @@ async def upload_file(
             "message": "Loading Excel file..."
         }
 
-        df = pd.read_excel(io.BytesIO(contents))
+        try:
+            df = pd.read_excel(io.BytesIO(contents), engine="calamine")
+        except Exception:
+            df = pd.read_excel(io.BytesIO(contents))
         total_records = len(df)
 
         upload_progress_store[upload_id] = {
@@ -677,7 +664,7 @@ async def resolve_headers(
                 chunk = normalize_dataframe(chunk)
             
             chunk = chunk.drop_duplicates()
-            chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
+            chunk["__hash"] = pd.util.hash_pandas_object(chunk, index=False).astype(str)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
             seen_hashes.update(chunk["__hash"])
             chunk = chunk.drop(columns=["__hash"])
