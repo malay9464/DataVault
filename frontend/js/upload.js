@@ -17,6 +17,11 @@ let selectedUserId = null;
 let selectedCategoryId = null;
 const PAGE_SIZE = 10;
 
+// Bulk delete & move state
+let selectedUploadIds = new Set();
+let moveTargetUploadId = null;
+let moveTargetCurrentCategoryId = null;
+
 // DOM Elements
 const fileInput = document.getElementById("fileInput");
 const fileName = document.getElementById("fileName");
@@ -42,31 +47,18 @@ const emptyState = document.getElementById("emptyState");
 const tableWrapper = document.getElementById("tableWrapper");
 const tableSkeleton = document.getElementById("tableSkeleton");
 
+// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
 document.addEventListener("keydown", (e) => {
     if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
-        if (e.key === "Escape") {
-            e.target.blur();
-        }
+        if (e.key === "Escape") e.target.blur();
         return;
     }
-
-    if (e.key === "/") {
-        e.preventDefault();
-        searchInput.focus();
-    }
-
-    if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        fileInput.click();
-    }
-
-    if (e.key === "?") {
-        e.preventDefault();
-        toggleShortcuts();
-    }
-
+    if (e.key === "/") { e.preventDefault(); searchInput.focus(); }
+    if (e.key === "n" || e.key === "N") { e.preventDefault(); fileInput.click(); }
+    if (e.key === "?") { e.preventDefault(); toggleShortcuts(); }
     if (e.key === "Escape") {
         closeAddUserModal();
+        closeMoveModal();
         const shortcutsModal = document.getElementById("shortcutsModal");
         if (shortcutsModal) shortcutsModal.style.display = "none";
     }
@@ -74,45 +66,31 @@ document.addEventListener("keydown", (e) => {
 
 function toggleShortcuts() {
     const modal = document.getElementById("shortcutsModal");
-    if (modal.style.display === "none" || !modal.style.display) {
-        modal.style.display = "flex";
-    } else {
-        modal.style.display = "none";
-    }
+    modal.style.display = (modal.style.display === "none" || !modal.style.display) ? "flex" : "none";
 }
 
+// ─── AUTH FETCH ───────────────────────────────────────────────────────────────
 async function authFetch(url, options = {}) {
     const res = await fetch(url, {
         ...options,
-        headers: {
-            ...(options.headers || {}),
-            "Authorization": "Bearer " + token
-        }
+        headers: { ...(options.headers || {}), "Authorization": "Bearer " + token }
     });
-
     if (res.status === 401) {
         localStorage.removeItem("access_token");
         window.location.href = "/static/login.html";
         return;
     }
-
     return res;
 }
 
+// ─── TOAST ────────────────────────────────────────────────────────────────────
 function showToast(message, type = "success", timeout = 4000) {
     const container = document.getElementById("toastContainer");
-
-    if (!container) {
-        console.error("Toast container missing!");
-        return;
-    }
-
+    if (!container) return;
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     toast.textContent = message;
-
     container.appendChild(toast);
-
     setTimeout(() => {
         toast.style.animation = "toastSlideOut 0.3s ease forwards";
         setTimeout(() => toast.remove(), 300);
@@ -120,40 +98,26 @@ function showToast(message, type = "success", timeout = 4000) {
 }
 
 const style = document.createElement("style");
-style.textContent = `
-    @keyframes toastSlideOut {
-        to {
-            opacity: 0;
-            transform: translateX(100px);
-        }
-    }
-`;
+style.textContent = `@keyframes toastSlideOut { to { opacity:0; transform:translateX(100px); } }`;
 document.head.appendChild(style);
 
+// ─── UPLOAD READINESS ─────────────────────────────────────────────────────────
 function checkUploadReady() {
-    const hasFile = !!selectedFile;
-    const hasCategory = !!categorySelect.value;
     const btn = document.getElementById("uploadBtn");
-    btn.disabled = !(hasFile && hasCategory);
+    btn.disabled = !(selectedFile && categorySelect.value);
 }
 
 fileInput.onchange = () => {
     selectedFile = fileInput.files[0];
-
     if (selectedFile) {
         const fileSize = (selectedFile.size / 1024 / 1024).toFixed(2);
         const fileType = selectedFile.name.split('.').pop().toUpperCase();
-
         fileName.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
-                <div style="font-weight: 600; color: #1e40af;">${selectedFile.name}</div>
-                <div style="font-size: 12px; color: #64748b;">
-                    ${fileSize} MB • ${fileType} Format
-                </div>
-            </div>
-        `;
+            <div style="display:flex;flex-direction:column;gap:4px;text-align:left;">
+                <div style="font-weight:600;color:#1e40af;">${selectedFile.name}</div>
+                <div style="font-size:12px;color:#64748b;">${fileSize} MB • ${fileType} Format</div>
+            </div>`;
         fileName.style.display = "flex";
-
         uploadBox.style.borderColor = "#16a34a";
         uploadBox.style.background = "#f0fdf4";
     } else {
@@ -162,13 +126,10 @@ fileInput.onchange = () => {
         uploadBox.style.borderColor = "";
         uploadBox.style.background = "";
     }
-
     checkUploadReady();
 };
 
-categorySelect.addEventListener("change", () => {
-    checkUploadReady();
-});
+categorySelect.addEventListener("change", checkUploadReady);
 
 uploadBox.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -176,19 +137,16 @@ uploadBox.addEventListener("dragover", (e) => {
     uploadBox.style.background = "#f0fdf4";
     uploadBox.style.transform = "scale(1.02)";
 });
-
 uploadBox.addEventListener("dragleave", () => {
     uploadBox.style.borderColor = "";
     uploadBox.style.background = "";
     uploadBox.style.transform = "";
 });
-
 uploadBox.addEventListener("drop", (e) => {
     e.preventDefault();
     uploadBox.style.borderColor = "";
     uploadBox.style.background = "";
     uploadBox.style.transform = "";
-
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         fileInput.files = files;
@@ -196,56 +154,31 @@ uploadBox.addEventListener("drop", (e) => {
     }
 });
 
+// ─── SEARCH PARAMS ────────────────────────────────────────────────────────────
 function buildSearchParams() {
     const p = new URLSearchParams();
-
-    if (searchInput && searchInput.value.trim())
-        p.append("filename", searchInput.value.trim());
-
-    if (totalMin && totalMin.value)
-        p.append("total_min", totalMin.value);
-
-    if (totalMax && totalMax.value)
-        p.append("total_max", totalMax.value);
-
-    if (dupMin && dupMin.value)
-        p.append("dup_min", dupMin.value);
-
-    if (dupMax && dupMax.value)
-        p.append("dup_max", dupMax.value);
-
-    if (dateFrom && dateFrom.value)
-        p.append("date_from", dateFrom.value);
-
-    if (dateTo && dateTo.value)
-        p.append("date_to", dateTo.value);
-
+    if (searchInput?.value.trim()) p.append("filename", searchInput.value.trim());
+    if (totalMin?.value) p.append("total_min", totalMin.value);
+    if (totalMax?.value) p.append("total_max", totalMax.value);
+    if (dupMin?.value) p.append("dup_min", dupMin.value);
+    if (dupMax?.value) p.append("dup_max", dupMax.value);
+    if (dateFrom?.value) p.append("date_from", dateFrom.value);
+    if (dateTo?.value) p.append("date_to", dateTo.value);
     return p.toString();
 }
 
 let searchTimeout;
 searchInput.addEventListener("input", () => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        page = 1;
-        loadUploads();
-    }, 300);
+    searchTimeout = setTimeout(() => { page = 1; loadUploads(); }, 300);
 });
 
+// ─── CATEGORIES ───────────────────────────────────────────────────────────────
 async function addCategoryPrompt() {
     const name = prompt("Enter category name");
     if (!name) return;
-
-    const res = await authFetch(
-        `/categories?name=${encodeURIComponent(name.trim())}`,
-        { method: "POST" }
-    );
-
-    if (!res.ok) {
-        showToast("Category already exists", "error");
-        return;
-    }
-
+    const res = await authFetch(`/categories?name=${encodeURIComponent(name.trim())}`, { method: "POST" });
+    if (!res.ok) { showToast("Category already exists", "error"); return; }
     showToast("Category created successfully", "success");
     loadCategories();
 }
@@ -260,12 +193,9 @@ async function loadCategories() {
         categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
     });
 
-    // Only render category sidebar for non-admin
     if (currentUser && currentUser.role !== "admin") {
         categoryList.innerHTML = "";
-
-        let allCount = 0;
-        let uncatCount = 0;
+        let allCount = 0, uncatCount = 0;
 
         cats.forEach(c => {
             allCount += c.uploads;
@@ -273,10 +203,8 @@ async function loadCategories() {
                 uncatCount = c.uploads;
                 return;
             }
-
             const div = document.createElement("div");
             div.className = "category";
-
             div.innerHTML = `
                 <span onclick="applyFilter(${c.id}, this.parentElement)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -284,14 +212,13 @@ async function loadCategories() {
                     </svg>
                     ${c.name}
                 </span>
-                <span style="display: flex; align-items: center; gap: 8px;">
+                <span style="display:flex;align-items:center;gap:8px;">
                     <span class="count-badge">${c.uploads}</span>
                     <span class="cat-actions" style="display:flex">
                         <button onclick="event.stopPropagation(); renameCategory(${c.id}, '${c.name}')">✎</button>
                         <button onclick="event.stopPropagation(); deleteCategory(${c.id})">✖</button>
                     </span>
-                </span>
-            `;
+                </span>`;
             categoryList.appendChild(div);
         });
 
@@ -302,14 +229,10 @@ async function loadCategories() {
     checkUploadReady();
 }
 
+// ─── ADMIN USER LIST ──────────────────────────────────────────────────────────
 async function loadAdminUserList() {
     const res = await authFetch("/admin/users-with-stats");
-
-    if (!res || !res.ok) {
-        console.error("Failed to load user list:", res?.status);
-        return;
-    }
-
+    if (!res || !res.ok) return;
     const users = await res.json();
     categoryList.innerHTML = "";
 
@@ -318,7 +241,7 @@ async function loadAdminUserList() {
     allCountSpan.innerText = totalUploads;
 
     if (users.length === 0) {
-        categoryList.innerHTML = `<div style="padding:12px; color:#94a3b8; font-size:13px;">No users found</div>`;
+        categoryList.innerHTML = `<div style="padding:12px;color:#94a3b8;font-size:13px;">No users found</div>`;
         return;
     }
 
@@ -326,22 +249,16 @@ async function loadAdminUserList() {
         const div = document.createElement("div");
         div.className = "category";
         div.id = `user-item-${u.id}`;
-
-        const label = u.email.length > 22
-            ? u.email.substring(0, 20) + "…"
-            : u.email;
-
+        const label = u.email.length > 22 ? u.email.substring(0, 20) + "…" : u.email;
         div.innerHTML = `
             <span onclick="filterByUser(${u.id}, this.parentElement)" title="${u.email}">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                     <circle cx="12" cy="7" r="4"/>
                 </svg>
                 ${label}
             </span>
-            <span class="count-badge">${u.upload_count}</span>
-        `;
+            <span class="count-badge">${u.upload_count}</span>`;
         categoryList.appendChild(div);
     });
 }
@@ -349,67 +266,33 @@ async function loadAdminUserList() {
 async function loadUserCategories(userId) {
     const res = await authFetch(`/categories?user_id=${userId}`);
     if (!res || !res.ok) return;
-
     const cats = await res.json();
-
     removeUserCategoryBar();
-
     if (cats.length === 0) return;
 
     const wrapper = document.createElement("div");
     wrapper.id = "userCategoryBar";
-    wrapper.style.cssText = `
-        padding: 8px 0 4px 0;
-        position: relative;
-    `;
-
+    wrapper.style.cssText = "padding:8px 0 4px 0;position:relative;";
     wrapper.innerHTML = `
-        <div style="display:flex; align-items:center; gap:8px; padding: 0 0 8px 0;">
-            <span style="font-size:12px; font-weight:600; color:#64748b;
-                         text-transform:uppercase; letter-spacing:0.5px;">
-                Category
-            </span>
-            <div style="position:relative; flex:1;">
-                <select id="adminCatDropdown"
-                    onchange="filterByCategoryDropdown(this)"
-                    style="
-                        width: 100%;
-                        padding: 7px 32px 7px 12px;
-                        border: 1.5px solid #e2e8f0;
-                        border-radius: 8px;
-                        background: #fff;
-                        color: #374151;
-                        font-size: 13px;
-                        font-weight: 500;
-                        cursor: pointer;
-                        appearance: none;
-                        outline: none;
-                        transition: border-color 0.15s;
-                    "
-                >
+        <div style="display:flex;align-items:center;gap:8px;padding:0 0 8px 0;">
+            <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Category</span>
+            <div style="position:relative;flex:1;">
+                <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
+                    style="width:100%;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+                           background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
+                           appearance:none;outline:none;">
                     <option value="">All Categories</option>
-                    ${cats.map(c => `
-                        <option value="${c.id}">
-                            ${c.name} (${c.uploads})
-                        </option>
-                    `).join("")}
+                    ${cats.map(c => `<option value="${c.id}">${c.name} (${c.uploads})</option>`).join("")}
                 </select>
-                <svg style="position:absolute; right:10px; top:50%;
-                            transform:translateY(-50%); pointer-events:none;
-                            color:#64748b;"
-                     width="14" height="14" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2">
+                <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#64748b;"
+                     width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
             </div>
-        </div>
-    `;
+        </div>`;
 
-    // Insert before search box
     const searchContainer = document.querySelector(".search-container");
-    if (searchContainer) {
-        searchContainer.parentNode.insertBefore(wrapper, searchContainer);
-    }
+    if (searchContainer) searchContainer.parentNode.insertBefore(wrapper, searchContainer);
 }
 
 function removeUserCategoryBar() {
@@ -428,47 +311,34 @@ function filterByUser(userId, el) {
     selectedCategoryId = null;
     currentFilter = "all";
     page = 1;
-
+    clearSelection();
     removeUserCategoryBar();
-
-    document.querySelectorAll(".category")
-        .forEach(c => c.classList.remove("active"));
+    document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
     el.classList.add("active");
-
     loadUserCategories(userId);
     loadUploads();
 }
 
 function toggleAdvancedFilters() {
-    if (advancedFilters.style.display === "none" || !advancedFilters.style.display) {
-        advancedFilters.style.display = "grid";
-    } else {
-        advancedFilters.style.display = "none";
-    }
+    advancedFilters.style.display =
+        (advancedFilters.style.display === "none" || !advancedFilters.style.display) ? "grid" : "none";
 }
 
 function applyFilter(type, el) {
     currentFilter = type;
     selectedUserId = null;
     selectedCategoryId = null;
-
-    removeUserCategoryBar();
-
     page = 1;
+    clearSelection();
+    removeUserCategoryBar();
     updateURL();
     searchInput.value = "";
-
-    document.querySelectorAll(".category")
-        .forEach(c => c.classList.remove("active"));
+    document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
     el.classList.add("active");
-
     loadUploads();
 }
 
-function applyAdvancedSearch() {
-    page = 1;
-    loadUploads();
-}
+function applyAdvancedSearch() { page = 1; loadUploads(); }
 
 function resetSearch() {
     searchInput.value = "";
@@ -478,37 +348,26 @@ function resetSearch() {
     dupMax.value = "";
     dateFrom.value = "";
     dateTo.value = "";
-
     page = 1;
     loadUploads();
 }
 
+// ─── UPLOAD ───────────────────────────────────────────────────────────────────
 async function upload() {
-    if (!selectedFile) {
-        showToast("Please select a file", "warn");
-        return;
-    }
-    if (!categorySelect.value) {
-        showToast("Please select a category", "warn");
-        return;
-    }
+    if (!selectedFile) { showToast("Please select a file", "warn"); return; }
+    if (!categorySelect.value) { showToast("Please select a category", "warn"); return; }
 
     const btn = document.getElementById("uploadBtn");
     const spinner = document.getElementById("uploadSpinner");
-
     btn.disabled = true;
     spinner.style.display = "inline-block";
     uploadProgress.style.display = "block";
     fileInput.disabled = true;
     uploadBox.classList.add("disabled");
-
     progressFill.style.width = "0%";
     progressText.textContent = "Starting...";
 
-    // 1. Generate upload_id client-side to open SSE before POST
     const uploadId = Date.now() * 1000;
-
-    // 2. Open SSE stream first
     const sseUrl = `/upload-progress/${uploadId}?token=${localStorage.getItem("access_token")}`;
     const eventSource = new EventSource(sseUrl);
 
@@ -516,40 +375,26 @@ async function upload() {
         try {
             const data = JSON.parse(e.data);
             const pct = data.percent || 0;
-
             progressFill.style.width = pct + "%";
             progressText.textContent = data.message || `${pct}%`;
-
-            if (data.status === "done") {
-                progressFill.style.width = "100%";
-                eventSource.close();
-            }
-
+            if (data.status === "done") { progressFill.style.width = "100%"; eventSource.close(); }
             if (data.status === "error") {
                 eventSource.close();
                 showToast(data.message || "Upload failed", "error");
                 uploadProgress.style.display = "none";
                 resetUploadState();
             }
-        } catch (err) {
-            console.error("SSE parse error:", err);
-        }
+        } catch (err) { console.error("SSE parse error:", err); }
     };
+    eventSource.onerror = () => { eventSource.close(); };
 
-    eventSource.onerror = () => {
-        eventSource.close();
-    };
-
-    // 3. Fire the upload POST
     try {
         const fd = new FormData();
         fd.append("file", selectedFile);
-
         const res = await authFetch(
             `/upload?category_id=${categorySelect.value}&upload_id_hint=${uploadId}`,
             { method: "POST", body: fd }
         );
-
         eventSource.close();
 
         if (res.status === 409) {
@@ -558,7 +403,6 @@ async function upload() {
             resetUploadState();
             return;
         }
-
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             showToast(err.detail || "Upload failed", "error");
@@ -568,20 +412,15 @@ async function upload() {
         }
 
         const result = await res.json();
-
         if (result.success === false && result.status === 'pending_headers') {
             showToast("Headers need review. Redirecting...", "warn", 2000);
             uploadProgress.style.display = "none";
-            setTimeout(() => {
-                window.location.href = `/header.html?upload_id=${result.upload_id}`;
-            }, 2000);
+            setTimeout(() => { window.location.href = `/header.html?upload_id=${result.upload_id}`; }, 2000);
             return;
         }
-
         if (result.success) {
             progressFill.style.width = "100%";
             progressText.textContent = `Done! ${result.total_records?.toLocaleString() || ""} records processed.`;
-
             setTimeout(() => {
                 showToast("Upload successful! ✨", "success");
                 uploadProgress.style.display = "none";
@@ -591,10 +430,8 @@ async function upload() {
                 loadUploads();
             }, 1000);
         }
-
     } catch (err) {
         eventSource.close();
-        console.error(err);
         showToast("Network error", "error");
         uploadProgress.style.display = "none";
         resetUploadState();
@@ -624,20 +461,16 @@ function resetUploadState() {
     checkUploadReady();
 }
 
-// ========== USER MANAGEMENT ==========
-function openAddUserModal() {
-    document.getElementById("addUserModal").style.display = "flex";
-}
+// ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
+function openAddUserModal() { document.getElementById("addUserModal").style.display = "flex"; }
 
 function closeAddUserModal() {
     document.getElementById("addUserModal").style.display = "none";
-
     document.getElementById("newUserEmail").value = "";
     document.getElementById("newUserPassword").value = "";
     document.querySelector('input[name="userRole"][value="user"]').checked = true;
-
-    const passwordStrength = document.getElementById("passwordStrength");
-    if (passwordStrength) passwordStrength.style.display = "none";
+    const ps = document.getElementById("passwordStrength");
+    if (ps) ps.style.display = "none";
 }
 
 document.getElementById("newUserPassword")?.addEventListener("input", (e) => {
@@ -645,35 +478,18 @@ document.getElementById("newUserPassword")?.addEventListener("input", (e) => {
     const strengthEl = document.getElementById("passwordStrength");
     const fillEl = document.getElementById("strengthFill");
     const textEl = document.getElementById("strengthText");
-
-    if (!password) {
-        strengthEl.style.display = "none";
-        return;
-    }
-
+    if (!password) { strengthEl.style.display = "none"; return; }
     strengthEl.style.display = "block";
-
     let strength = 0;
-    let label = "";
-    let color = "";
-
     if (password.length >= 8) strength += 25;
     if (password.length >= 12) strength += 25;
     if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
     if (/[0-9]/.test(password)) strength += 12;
     if (/[^a-zA-Z0-9]/.test(password)) strength += 13;
-
-    if (strength < 40) {
-        label = "Weak";
-        color = "#dc2626";
-    } else if (strength < 70) {
-        label = "Medium";
-        color = "#f59e0b";
-    } else {
-        label = "Strong";
-        color = "#16a34a";
-    }
-
+    let label, color;
+    if (strength < 40) { label = "Weak"; color = "#dc2626"; }
+    else if (strength < 70) { label = "Medium"; color = "#f59e0b"; }
+    else { label = "Strong"; color = "#16a34a"; }
     fillEl.style.width = strength + "%";
     fillEl.style.background = color;
     textEl.textContent = label;
@@ -684,34 +500,24 @@ async function createUser() {
     const email = document.getElementById("newUserEmail").value.trim();
     const password = document.getElementById("newUserPassword").value.trim();
     const role = document.querySelector('input[name="userRole"]:checked').value;
-
-    if (!email || !password) {
-        showToast("Email and password required", "error");
-        return;
-    }
-
+    if (!email || !password) { showToast("Email and password required", "error"); return; }
     const res = await authFetch(
         `/admin/users?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&role=${role}`,
         { method: "POST" }
     );
-
     if (!res.ok) {
         const err = await res.json();
         showToast(err.detail || "Failed to create user", "error");
         return;
     }
-
     closeAddUserModal();
     showToast("User added successfully ✓", "success");
 }
 
+// ─── LOAD USER ────────────────────────────────────────────────────────────────
 async function loadUser() {
     const res = await authFetch("/me");
-    if (!res.ok) {
-        logout();
-        return;
-    }
-
+    if (!res.ok) { logout(); return; }
     currentUser = await res.json();
 
     const newCategoryBtn = document.getElementById("newCategoryBtn");
@@ -723,27 +529,22 @@ async function loadUser() {
     if (currentUser.role === "admin") {
         const label = document.getElementById("sidebarSectionLabel");
         if (label) label.textContent = "Users";
-
         if (newCategoryBtn) newCategoryBtn.style.display = "none";
         if (addUserBtn) addUserBtn.style.display = "flex";
         if (manageUsersBtn) manageUsersBtn.style.display = "flex";
-
         if (uploadSection) uploadSection.style.display = "none";
         if (divider) divider.style.display = "none";
-
-        document.querySelectorAll(".cat-actions")
-            .forEach(a => a.style.display = "none");
-
+        document.querySelectorAll(".cat-actions").forEach(a => a.style.display = "none");
     } else {
         if (newCategoryBtn) newCategoryBtn.style.display = "flex";
         if (addUserBtn) addUserBtn.style.display = "none";
         if (manageUsersBtn) manageUsersBtn.style.display = "none";
-
         if (uploadSection) uploadSection.style.display = "block";
         if (divider) divider.style.display = "block";
     }
 }
 
+// ─── LOAD UPLOADS ─────────────────────────────────────────────────────────────
 async function loadUploads(showSkeleton = false) {
     if (showSkeleton) {
         tableSkeleton.style.display = "block";
@@ -753,19 +554,14 @@ async function loadUploads(showSkeleton = false) {
 
     const params = new URLSearchParams();
 
-    if (currentUser.role === "admin" && selectedUserId) {
+    if (currentUser.role === "admin" && selectedUserId)
         params.append("created_by_user_id", selectedUserId);
-    }
-
-    if (currentUser.role === "admin" && selectedCategoryId) {
+    if (currentUser.role === "admin" && selectedCategoryId)
         params.append("category_id", selectedCategoryId);
-    }
 
     if (currentUser.role !== "admin") {
         if (currentFilter === "uncat") {
-            const uncatEntry = categoriesCache.find(
-                c => c.name.toLowerCase() === "uncategorized"
-            );
+            const uncatEntry = categoriesCache.find(c => c.name.toLowerCase() === "uncategorized");
             if (uncatEntry) params.append("category_id", uncatEntry.id);
         } else if (currentFilter !== "all") {
             params.append("category_id", currentFilter);
@@ -784,34 +580,25 @@ async function loadUploads(showSkeleton = false) {
 
     try {
         const res = await authFetch(url);
-
-        if (!res.ok) {
-            showToast("Failed to load uploads", "error");
-            tableSkeleton.style.display = "none";
-            return;
-        }
+        if (!res.ok) { showToast("Failed to load uploads", "error"); tableSkeleton.style.display = "none"; return; }
 
         allUploads = await res.json();
         filteredUploads = [...allUploads];
-
         tableSkeleton.style.display = "none";
+
+        // Clear selections when data reloads
+        clearSelection();
 
         if (filteredUploads.length === 0) {
             tableWrapper.style.display = "none";
-
             const hasAdvancedFilter = (
-                (totalMin && totalMin.value) ||
-                (totalMax && totalMax.value) ||
-                (dupMin && dupMin.value) ||
-                (dupMax && dupMax.value) ||
-                (dateFrom && dateFrom.value) ||
-                (dateTo && dateTo.value) ||
-                (searchInput && searchInput.value.trim())
+                (totalMin?.value) || (totalMax?.value) ||
+                (dupMin?.value) || (dupMax?.value) ||
+                (dateFrom?.value) || (dateTo?.value) ||
+                (searchInput?.value.trim())
             );
-
             const emptyMsg = document.getElementById("emptyMessage");
             const emptyReset = document.getElementById("emptyReset");
-
             if (hasAdvancedFilter) {
                 if (emptyMsg) emptyMsg.textContent = "No uploads match your filters";
                 if (emptyReset) emptyReset.style.display = "inline-block";
@@ -819,9 +606,7 @@ async function loadUploads(showSkeleton = false) {
                 if (emptyMsg) emptyMsg.textContent = "No files have been uploaded yet";
                 if (emptyReset) emptyReset.style.display = "none";
             }
-
             emptyState.style.display = "block";
-
         } else {
             emptyState.style.display = "none";
             tableWrapper.style.display = "block";
@@ -834,93 +619,243 @@ async function loadUploads(showSkeleton = false) {
     }
 }
 
+// ─── RENDER TABLE ─────────────────────────────────────────────────────────────
 function renderTable() {
     const totalPages = Math.ceil(filteredUploads.length / PAGE_SIZE);
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
 
-    let header = `
-        <thead>
-        <tr>
-            <th>File</th>
-            <th>Category</th>
-            <th>Total Records</th>
-            <th>Duplicates</th>
-    `;
+    // All IDs on this page
+    const pageIds = data.map(r => r.upload_id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedUploadIds.has(id));
 
-    if (currentUser.role === "admin") {
-        header += `<th>Uploaded By</th>`;
-    }
+    let header = `<thead><tr>
+        <th style="width:40px; text-align:center;">
+            <input type="checkbox" id="selectAllCheckbox"
+                ${allPageSelected ? "checked" : ""}
+                onchange="toggleSelectAll(this)"
+                style="cursor:pointer; width:16px; height:16px;">
+        </th>
+        <th>File</th>
+        <th>Category</th>
+        <th>Total Records</th>
+        <th>Duplicates</th>`;
 
+    if (currentUser.role === "admin") header += `<th>Uploaded By</th>`;
     header += `<th>Status</th><th>Actions</th></tr></thead><tbody>`;
     uploadTable.innerHTML = header;
 
     data.forEach(r => {
         const dupPercentage = r.total_records > 0
-            ? (r.duplicate_records / r.total_records * 100).toFixed(1)
-            : 0;
-
+            ? (r.duplicate_records / r.total_records * 100).toFixed(1) : 0;
         let statusClass = "status-clean";
         let statusText = "Clean";
+        if (dupPercentage > 20) { statusClass = "status-warning"; statusText = `${dupPercentage}% Dup`; }
+        else if (dupPercentage > 0) { statusText = `${dupPercentage}% Dup`; }
 
-        if (dupPercentage > 20) {
-            statusClass = "status-warning";
-            statusText = `${dupPercentage}% Dup`;
-        } else if (dupPercentage > 0) {
-            statusText = `${dupPercentage}% Dup`;
-        }
+        const isChecked = selectedUploadIds.has(r.upload_id);
+        const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
+        const canMove   = currentUser.role !== "admin"; // users only; admin can't manage categories
 
-        let row = `
-            <tr>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 18px;">📄</span>
-                        <strong>${r.filename}</strong>
-                    </div>
-                </td>
-                <td>${r.category}</td>
-                <td>${r.total_records.toLocaleString()}</td>
-                <td>${r.duplicate_records.toLocaleString()}</td>
-        `;
-
-        if (currentUser.role === "admin") {
-            row += `<td>${r.uploaded_by}</td>`;
-        }
-
-        row += `
-                <td>
-                    <span class="status-indicator ${statusClass}">${statusText}</span>
-                </td>
-        `;
-
-        const canDelete =
-            currentUser.role === "admin" ||
-            r.created_by_user_id === currentUser.id;
-
-        row += `
+        let row = `<tr id="row-${r.upload_id}" class="${isChecked ? 'row-selected' : ''}">
+            <td style="text-align:center;">
+                <input type="checkbox" class="row-checkbox"
+                    data-id="${r.upload_id}"
+                    ${isChecked ? "checked" : ""}
+                    ${canDelete ? "" : "disabled"}
+                    onchange="toggleRowSelect(this, ${r.upload_id})"
+                    style="cursor:pointer; width:16px; height:16px;">
+            </td>
             <td>
-                <div class="action-group">
-                    <button class="btn-view"
-                        onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">
-                        View
-                    </button>
-
-                    <button class="btn-delete ${canDelete ? "" : "disabled"}"
-                        ${canDelete ? `onclick="del(${r.upload_id})"` : "disabled"}>
-                        Delete
-                    </button>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;">📄</span>
+                    <strong>${r.filename}</strong>
                 </div>
             </td>
-        </tr>
-        `;
+            <td>${r.category}</td>
+            <td>${r.total_records.toLocaleString()}</td>
+            <td>${r.duplicate_records.toLocaleString()}</td>`;
+
+        if (currentUser.role === "admin") row += `<td>${r.uploaded_by}</td>`;
+
+        row += `<td><span class="status-indicator ${statusClass}">${statusText}</span></td>`;
+
+        row += `<td>
+            <div class="action-group">
+                <button class="btn-view"
+                    onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">
+                    View
+                </button>`;
+
+        if (canMove) {
+            row += `<button class="btn-move"
+                onclick="openMoveModal(${r.upload_id}, ${r.category_id}, '${r.filename.replace(/'/g, "\\'")}')">
+                Move
+            </button>`;
+        }
+
+        row += `<button class="btn-delete ${canDelete ? "" : "disabled"}"
+                ${canDelete ? `onclick="del(${r.upload_id})"` : "disabled"}>
+                Delete
+            </button>
+            </div></td></tr>`;
 
         uploadTable.innerHTML += row;
     });
 
     uploadTable.innerHTML += `</tbody>`;
     renderPagination(totalPages);
+    updateBulkBar();
 }
 
+// ─── BULK SELECT ──────────────────────────────────────────────────────────────
+function toggleSelectAll(checkbox) {
+    const start = (page - 1) * PAGE_SIZE;
+    const data = filteredUploads.slice(start, start + PAGE_SIZE);
+
+    data.forEach(r => {
+        const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
+        if (!canDelete) return;
+        if (checkbox.checked) {
+            selectedUploadIds.add(r.upload_id);
+        } else {
+            selectedUploadIds.delete(r.upload_id);
+        }
+    });
+
+    // Update row checkboxes visually
+    document.querySelectorAll(".row-checkbox").forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        cb.checked = selectedUploadIds.has(id);
+        const row = document.getElementById(`row-${id}`);
+        if (row) row.classList.toggle("row-selected", cb.checked);
+    });
+
+    updateBulkBar();
+}
+
+function toggleRowSelect(checkbox, uploadId) {
+    if (checkbox.checked) {
+        selectedUploadIds.add(uploadId);
+    } else {
+        selectedUploadIds.delete(uploadId);
+    }
+    const row = document.getElementById(`row-${uploadId}`);
+    if (row) row.classList.toggle("row-selected", checkbox.checked);
+
+    // Update "select all" checkbox state
+    const start = (page - 1) * PAGE_SIZE;
+    const data = filteredUploads.slice(start, start + PAGE_SIZE);
+    const pageIds = data.map(r => r.upload_id);
+    const allSelected = pageIds.every(id => selectedUploadIds.has(id));
+    const selectAll = document.getElementById("selectAllCheckbox");
+    if (selectAll) selectAll.checked = allSelected;
+
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    const bar = document.getElementById("bulkActionBar");
+    const countEl = document.getElementById("bulkSelectedCount");
+    const count = selectedUploadIds.size;
+    if (count > 0) {
+        bar.style.display = "flex";
+        countEl.textContent = `${count} file${count !== 1 ? "s" : ""} selected`;
+    } else {
+        bar.style.display = "none";
+    }
+}
+
+function clearSelection() {
+    selectedUploadIds.clear();
+    updateBulkBar();
+    // Uncheck all visible checkboxes
+    document.querySelectorAll(".row-checkbox").forEach(cb => { cb.checked = false; });
+    const selectAll = document.getElementById("selectAllCheckbox");
+    if (selectAll) selectAll.checked = false;
+    document.querySelectorAll(".row-selected").forEach(row => row.classList.remove("row-selected"));
+}
+
+// ─── BULK DELETE ──────────────────────────────────────────────────────────────
+async function bulkDelete() {
+    const ids = Array.from(selectedUploadIds);
+    if (ids.length === 0) return;
+
+    const confirmed = confirm(
+        `Delete ${ids.length} file${ids.length !== 1 ? "s" : ""}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const res = await authFetch("/uploads/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upload_ids: ids })
+    });
+
+    if (res.ok) {
+        const result = await res.json();
+        showToast(`${result.deleted_count} file${result.deleted_count !== 1 ? "s" : ""} deleted successfully`, "success");
+        clearSelection();
+        loadCategories();
+        loadUploads();
+    } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Bulk delete failed", "error");
+    }
+}
+
+// ─── MOVE UPLOAD ──────────────────────────────────────────────────────────────
+function openMoveModal(uploadId, currentCategoryId, filename) {
+    moveTargetUploadId = uploadId;
+    moveTargetCurrentCategoryId = currentCategoryId;
+
+    document.getElementById("moveFileName").textContent = filename;
+
+    const select = document.getElementById("moveCategorySelect");
+    select.innerHTML = `<option value="" disabled selected>— Choose category —</option>`;
+
+    categoriesCache.forEach(c => {
+        if (c.id === currentCategoryId) return; // exclude current category
+        select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    });
+
+    document.getElementById("moveModal").style.display = "flex";
+}
+
+function closeMoveModal() {
+    document.getElementById("moveModal").style.display = "none";
+    moveTargetUploadId = null;
+    moveTargetCurrentCategoryId = null;
+}
+
+async function confirmMove() {
+    const categoryId = parseInt(document.getElementById("moveCategorySelect").value);
+
+    if (!categoryId) {
+        showToast("Please select a destination category", "warn");
+        return;
+    }
+
+    const res = await authFetch(`/upload/${moveTargetUploadId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category_id: categoryId })
+    });
+
+    closeMoveModal();
+
+    if (res.ok) {
+        const destCat = categoriesCache.find(c => c.id === categoryId);
+        showToast(`File moved to "${destCat?.name || "category"}" ✓`, "success");
+        loadCategories();
+        loadUploads();
+    } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Failed to move file", "error");
+    }
+}
+
+// ─── PAGINATION ───────────────────────────────────────────────────────────────
 function renderPagination(totalPages) {
     pagination.innerHTML = "";
     if (totalPages <= 1) return;
@@ -928,34 +863,21 @@ function renderPagination(totalPages) {
     const prev = document.createElement("button");
     prev.innerText = "Previous";
     prev.disabled = page === 1;
-    prev.onclick = () => {
-        page--;
-        updateURL();
-        renderTable();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
+    prev.onclick = () => { page--; updateURL(); renderTable(); window.scrollTo({ top: 0, behavior: "smooth" }); };
     pagination.appendChild(prev);
 
     let start = Math.max(1, page - 2);
     let end = Math.min(totalPages, page + 2);
-
     if (start > 1) addPage(1);
     if (start > 2) pagination.append(document.createTextNode("..."));
-
     for (let i = start; i <= end; i++) addPage(i);
-
     if (end < totalPages - 1) pagination.append(document.createTextNode("..."));
     if (end < totalPages) addPage(totalPages);
 
     const next = document.createElement("button");
     next.innerText = "Next";
     next.disabled = page === totalPages;
-    next.onclick = () => {
-        page++;
-        updateURL();
-        renderTable();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
+    next.onclick = () => { page++; updateURL(); renderTable(); window.scrollTo({ top: 0, behavior: "smooth" }); };
     pagination.appendChild(next);
 }
 
@@ -963,39 +885,22 @@ function addPage(n) {
     const b = document.createElement("button");
     b.innerText = n;
     if (n === page) b.classList.add("active");
-    b.onclick = () => {
-        page = n;
-        updateURL();
-        renderTable();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
+    b.onclick = () => { page = n; updateURL(); renderTable(); window.scrollTo({ top: 0, behavior: "smooth" }); };
     pagination.appendChild(b);
 }
 
+// ─── CATEGORY CRUD ────────────────────────────────────────────────────────────
 async function renameCategory(id, oldName) {
     const name = prompt("Rename category", oldName);
     if (!name) return;
-
-    const res = await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, {
-        method: "PUT"
-    });
-
-    if (res.ok) {
-        showToast("Category renamed successfully", "success");
-        loadCategories();
-        loadUploads();
-    } else {
-        showToast("Failed to rename category", "error");
-    }
+    const res = await authFetch(`/categories/${id}?name=${encodeURIComponent(name)}`, { method: "PUT" });
+    if (res.ok) { showToast("Category renamed successfully", "success"); loadCategories(); loadUploads(); }
+    else showToast("Failed to rename category", "error");
 }
 
 async function deleteCategory(id) {
     if (!confirm("Delete this category? This cannot be undone.")) return;
-
-    const res = await authFetch(`/categories/${id}`, {
-        method: "DELETE"
-    });
-
+    const res = await authFetch(`/categories/${id}`, { method: "DELETE" });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         showToast(err.detail || "Cannot delete category", "error");
@@ -1006,22 +911,21 @@ async function deleteCategory(id) {
     }
 }
 
+// ─── SINGLE DELETE ────────────────────────────────────────────────────────────
 async function del(uid) {
     if (!confirm("Delete this upload? This action cannot be undone.")) return;
-
-    const res = await authFetch(`/upload/${uid}`, {
-        method: "DELETE"
-    });
-
+    const res = await authFetch(`/upload/${uid}`, { method: "DELETE" });
     if (res.ok) {
-        showToast("Upload deleted successfully", "success");
+        showToast("File deleted successfully", "success");
+        selectedUploadIds.delete(uid);
         loadCategories();
         loadUploads();
     } else {
-        showToast("Failed to delete upload", "error");
+        showToast("Failed to delete file", "error");
     }
 }
 
+// ─── MISC ─────────────────────────────────────────────────────────────────────
 function logout() {
     localStorage.removeItem("access_token");
     window.location.href = "/static/login.html";
@@ -1037,11 +941,7 @@ function updateURL() {
 async function initPage() {
     await loadUser();
     await loadCategories();
-
-    if (currentUser && currentUser.role === "admin") {
-        await loadAdminUserList();
-    }
-
+    if (currentUser && currentUser.role === "admin") await loadAdminUserList();
     await loadUploads(true);
     checkUploadReady();
 }

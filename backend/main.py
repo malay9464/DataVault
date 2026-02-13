@@ -10,7 +10,7 @@ from header import (
 )
 import tempfile
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -37,6 +37,12 @@ upload_progress_store: dict = {}
 class HeaderResolutionRequest(BaseModel):
     user_mapping: Dict[int, str] = {}
     first_row_is_data: bool = False
+
+class BulkDeleteRequest(BaseModel):
+    upload_ids: List[int]
+
+class MoveUploadRequest(BaseModel):
+    category_id: int
 
 EMAIL_KEYWORDS = ["email", "e-mail", "mail"]
 PHONE_KEYWORDS = ["phone", "mobile", "contact", "cell"]
@@ -201,7 +207,6 @@ def list_categories(
     with engine.begin() as conn:
         if current_user["role"] == "admin":
             if user_id:
-                # Admin requesting a specific user's categories
                 rows = conn.execute(text("""
                     SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
                            c.created_by_user_id
@@ -212,7 +217,6 @@ def list_categories(
                     ORDER BY c.name
                 """), {"uid": user_id}).fetchall()
             else:
-                # Admin requesting all categories
                 rows = conn.execute(text("""
                     SELECT c.id, c.name, COUNT(u.upload_id) AS uploads,
                            c.created_by_user_id
@@ -243,7 +247,6 @@ async def upload_progress_stream(
     token: str = Query(...)
 ):
     """SSE progress stream. Token passed as query param (EventSource limitation)."""
-    # Validate token manually
     try:
         from auth import SECRET_KEY, ALGORITHM
         import jwt as pyjwt
@@ -308,7 +311,6 @@ async def upload_file(
         raise HTTPException(status_code=409, detail="File with the same name already exists")
 
     upload_id = upload_id_hint if upload_id_hint else int(time.time() * 1000000)
-    # ── PROGRESS: reading file ──
     upload_progress_store[upload_id] = {
         "percent": 5,
         "status": "processing",
@@ -326,7 +328,6 @@ async def upload_file(
         upload_progress_store.pop(upload_id, None)
         raise HTTPException(status_code=400, detail="Unsupported file")
 
-    # ── PROGRESS: detecting headers ──
     upload_progress_store[upload_id] = {
         "percent": 10,
         "status": "processing",
@@ -377,7 +378,6 @@ async def upload_file(
     duplicate_records = 0
     seen_hashes = set()
 
-    # ── PROGRESS: drop index ──
     upload_progress_store[upload_id] = {
         "percent": 15,
         "status": "processing",
@@ -394,9 +394,7 @@ async def upload_file(
         except UnicodeDecodeError:
             return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
 
-    # ── CSV: get total rows for real percentage ──
     if name.endswith(".csv"):
-        # Count total rows first (fast pass)
         upload_progress_store[upload_id] = {
             "percent": 18,
             "status": "processing",
@@ -432,7 +430,6 @@ async def upload_file(
 
             rows_processed += len(chunk)
 
-            # Real percentage: 20% to 85% during ingestion
             if estimated_total > 0:
                 ingest_pct = rows_processed / estimated_total
                 percent = int(20 + ingest_pct * 65)
@@ -447,7 +444,6 @@ async def upload_file(
             }
 
     elif name.endswith(".xls") or name.endswith(".xlsx"):
-        # ── PROGRESS: loading excel ──
         upload_progress_store[upload_id] = {
             "percent": 20,
             "status": "processing",
@@ -492,7 +488,6 @@ async def upload_file(
     if name.endswith(".csv"):
         duplicate_records = total_records - len(seen_hashes)
 
-    # ── PROGRESS: rebuilding index ──
     upload_progress_store[upload_id] = {
         "percent": 88,
         "status": "processing",
@@ -505,7 +500,6 @@ async def upload_file(
         """))
         conn.commit()
 
-    # ── PROGRESS: saving log ──
     upload_progress_store[upload_id] = {
         "percent": 95,
         "status": "processing",
@@ -542,7 +536,6 @@ async def upload_file(
 
     log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
 
-    # ── PROGRESS: done ──
     upload_progress_store[upload_id] = {
         "percent": 100,
         "status": "done",
@@ -561,10 +554,6 @@ def get_upload_headers(
     upload_id: int,
     user: dict = Depends(get_current_user)
 ):
-    """
-    Get header information for a pending upload (NOT YET IN DATABASE).
-    Reads from temporary storage.
-    """
     temp_dir = tempfile.gettempdir()
     temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
     
@@ -574,11 +563,9 @@ def get_upload_headers(
             detail="Upload session expired or not found. Please re-upload."
         )
     
-    # Read metadata from temp storage
     with open(temp_meta_path, 'r') as f:
         metadata = json.load(f)
     
-    # Verify user ownership
     if metadata['user_id'] != user["id"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -594,14 +581,6 @@ async def resolve_headers(
     request: HeaderResolutionRequest,
     user: dict = Depends(get_current_user)
 ):
-    """
-    User submits header corrections.
-    
-    CRITICAL: Two-mode ingestion
-    - RAW mode: User resolved headers → NO normalization
-    - NORMALIZED mode: No user intervention → Apply normalization
-    """
-    
     user_mapping = request.user_mapping
     first_row_is_data = request.first_row_is_data
     
@@ -615,11 +594,9 @@ async def resolve_headers(
             detail="Upload session expired. Please re-upload the file."
         )
     
-    # Read metadata
     with open(temp_meta_path, 'r') as f:
         metadata = json.load(f)
     
-    # Verify user ownership
     if metadata['user_id'] != user["id"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -627,16 +604,13 @@ async def resolve_headers(
     category_id = metadata['category_id']
     original_headers_json = metadata['original_headers']
     
-    # Read file contents
     with open(temp_file_path, 'rb') as f:
         contents = f.read()
     
     name = filename.lower()
     
-    # Determine header parameter
     header_param = None if first_row_is_data else 0
     
-    # Get total number of columns
     if name.endswith(".csv"):
         try:
             sample_df = pd.read_csv(io.BytesIO(contents), nrows=1, encoding="utf-8", header=header_param)
@@ -649,7 +623,6 @@ async def resolve_headers(
     
     total_columns = len(sample_df.columns)
     
-    # Build final column names
     final_column_names = []
     for idx in range(total_columns):
         if idx in user_mapping and user_mapping[idx].strip():
@@ -657,7 +630,6 @@ async def resolve_headers(
         else:
             final_column_names.append(f'unnamed_{idx}')
     
-    # Store final headers
     final_headers = {
         'columns': final_column_names,
         'user_mapping': user_mapping,
@@ -673,12 +645,10 @@ async def resolve_headers(
         ingestion_mode = 'normalized'
         resolution_type = 'original'
 
-    # Initialize counters
     total_records = 0
     duplicate_records = 0
     seen_hashes = set()
 
-    # Drop index
     with engine.connect() as conn:
         conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
         conn.commit()
@@ -700,23 +670,17 @@ async def resolve_headers(
             )
         
         for chunk in reader:
-            # Apply final column names
             chunk.columns = final_column_names
-            
             total_records += len(chunk)
             
             if ingestion_mode == 'normalized':
-                # NORMALIZED MODE: Apply auto-normalization
                 chunk = normalize_dataframe(chunk)
-            # else: RAW MODE - NO normalization, preserve ALL columns
             
-            # Deduplication (works on current columns, whatever they are)
             chunk = chunk.drop_duplicates()
             chunk["__hash"] = chunk.astype(str).agg("|".join, axis=1)
             chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
             seen_hashes.update(chunk["__hash"])
             chunk = chunk.drop(columns=["__hash"])
-            
             copy_cleaned_data(engine, upload_id, chunk)
 
         duplicate_records = total_records - len(seen_hashes)
@@ -727,26 +691,19 @@ async def resolve_headers(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file")
         
-        # Apply final column names
         df.columns = final_column_names
-        
         total_records = len(df)
         
         if ingestion_mode == 'normalized':
-            # NORMALIZED MODE: Apply auto-normalization
             df = normalize_dataframe(df)
-        # else: RAW MODE - NO normalization, preserve ALL columns
         
-        # Deduplication (works on current columns, whatever they are)
         df = df.drop_duplicates()
         df["__hash"] = df.astype(str).agg("|".join, axis=1)
         df = df.drop_duplicates(subset="__hash")
         duplicate_records = total_records - len(df)
         df = df.drop(columns=["__hash"])
-        
         copy_cleaned_data(engine, upload_id, df)
 
-    # Recreate index
     with engine.connect() as conn:
         conn.execute(text("CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)"))
         conn.commit()
@@ -779,7 +736,6 @@ async def resolve_headers(
         )
         conn.commit()
 
-    # Clean up temp files
     try:
         os.remove(temp_file_path)
         os.remove(temp_meta_path)
@@ -794,7 +750,7 @@ async def resolve_headers(
         "total_records": total_records,
         "duplicate_records": duplicate_records,
         "resolution_type": resolution_type,
-        "ingestion_mode": ingestion_mode  # For debugging
+        "ingestion_mode": ingestion_mode
     }
 
 # ---------------- UPLOAD LIST ----------------
@@ -814,12 +770,10 @@ def list_uploads(
     where = []
     params = {}
 
-    # Tenant isolation — users only see their own
     if current_user["role"] != "admin":
         where.append("u.created_by_user_id = :owner_id")
         params["owner_id"] = current_user["id"]
 
-    # Admin filtering by specific user
     if current_user["role"] == "admin" and created_by_user_id:
         where.append("u.created_by_user_id = :filter_uid")
         params["filter_uid"] = created_by_user_id
@@ -867,7 +821,8 @@ def list_uploads(
                        u.uploaded_at,
                        u.created_by_user_id,
                        usr.email AS uploaded_by,
-                       c.name AS category
+                       c.name AS category,
+                       u.category_id
                 FROM upload_log u
                 JOIN categories c ON c.id = u.category_id
                 JOIN users usr ON usr.id = u.created_by_user_id
@@ -887,6 +842,7 @@ def list_uploads(
             "status": r.status,
             "uploaded_at": str(r.uploaded_at),
             "category": r.category,
+            "category_id": r.category_id,
             "created_by_user_id": r.created_by_user_id,
             "uploaded_by": r.uploaded_by
         }
@@ -895,10 +851,6 @@ def list_uploads(
 
 @app.post("/admin/cleanup-temp-uploads")
 def cleanup_abandoned_uploads(user: dict = Depends(admin_only)):
-    """
-    Delete temporary upload files older than 1 hour.
-    Should be called by a cron job or manually by admin.
-    """
     import glob
     
     temp_dir = tempfile.gettempdir()
@@ -906,7 +858,7 @@ def cleanup_abandoned_uploads(user: dict = Depends(admin_only)):
     
     deleted_count = 0
     current_time = time.time()
-    max_age = 3600  # 1 hour in seconds
+    max_age = 3600
     
     for filepath in glob.glob(pattern):
         try:
@@ -989,16 +941,11 @@ def search_data(
     page_size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user)
 ):
-    """
-    Server-side search across all columns.
-    Much faster than loading all data to client.
-    """
     offset = (page - 1) * page_size
     search_term = f"%{query.lower()}%"
     
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
-        # Get columns from first row
         first_row = conn.execute(
             text("""
                 SELECT row_data
@@ -1014,13 +961,11 @@ def search_data(
         
         columns = list(first_row.row_data.keys())
         
-        # Build search condition for all columns
         search_conditions = " OR ".join([
             f"LOWER(CAST(row_data->>'{col}' AS TEXT)) LIKE :search"
             for col in columns
         ])
         
-        # Count total matching records
         total = conn.execute(
             text(f"""
                 SELECT COUNT(*)
@@ -1031,7 +976,6 @@ def search_data(
             {"uid": upload_id, "search": search_term}
         ).scalar()
         
-        # Get paginated results
         rows = conn.execute(
             text(f"""
                 SELECT id, row_data
@@ -1044,7 +988,6 @@ def search_data(
             {"uid": upload_id, "search": search_term, "limit": page_size, "offset": offset}
         ).fetchall()
     
-    # Filter columns (same as preview)
     excluded_prefixes = ["original_", "raw_"]
     normalized_columns = [
         col for col in columns 
@@ -1070,10 +1013,6 @@ def get_upload_metadata(
     upload_id: int,
     user: dict = Depends(get_current_user)
 ):
-    """
-    Fetch metadata for a specific upload.
-    Returns filename and other relevant info.
-    """
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
         result = conn.execute(
@@ -1155,7 +1094,6 @@ def delete_user(
         raise HTTPException(status_code=403, detail="Admin only")
 
     with engine.begin() as conn:
-        # Confirm user exists
         target = conn.execute(
             text("SELECT id, email FROM users WHERE id = :uid"),
             {"uid": user_id}
@@ -1164,7 +1102,6 @@ def delete_user(
         if not target:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Prevent admin deleting themselves
         if user_id == current_user["id"]:
             raise HTTPException(
                 status_code=400,
@@ -1172,7 +1109,6 @@ def delete_user(
             )
 
         if policy == "delete_all":
-            # Delete all cleaned_data rows for this user's uploads
             conn.execute(text("""
                 DELETE FROM cleaned_data
                 WHERE upload_id IN (
@@ -1181,37 +1117,31 @@ def delete_user(
                 )
             """), {"uid": user_id})
 
-            # Delete upload_log entries
             conn.execute(
                 text("DELETE FROM upload_log WHERE created_by_user_id = :uid"),
                 {"uid": user_id}
             )
 
-            # Delete categories
             conn.execute(
                 text("DELETE FROM categories WHERE created_by_user_id = :uid"),
                 {"uid": user_id}
             )
 
         elif policy == "transfer":
-            # Find admin id (the current admin performing the action)
             admin_id = current_user["id"]
 
-            # Transfer uploads
             conn.execute(text("""
                 UPDATE upload_log
                 SET created_by_user_id = :admin_id
                 WHERE created_by_user_id = :uid
             """), {"admin_id": admin_id, "uid": user_id})
 
-            # Transfer categories
             conn.execute(text("""
                 UPDATE categories
                 SET created_by_user_id = :admin_id
                 WHERE created_by_user_id = :uid
             """), {"admin_id": admin_id, "uid": user_id})
 
-        # Delete user
         conn.execute(
             text("DELETE FROM users WHERE id = :uid"),
             {"uid": user_id}
@@ -1273,7 +1203,6 @@ def export_data(
 
     df = pd.DataFrame([r.row_data for r in rows])
 
-    # ---------- CSV ----------
     if format == "csv":
         stream = io.StringIO()
         df.to_csv(stream, index=False)
@@ -1288,7 +1217,6 @@ def export_data(
             }
         )
 
-    # ---------- EXCEL ----------
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Cleaned Data")
@@ -1338,6 +1266,117 @@ def delete_upload(
 
     return {"success": True}
 
+# ---------------- BULK DELETE ----------------
+@app.delete("/uploads/bulk")
+def bulk_delete_uploads(
+    request: BulkDeleteRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Delete multiple uploads in one request.
+    Each upload_id is validated for ownership before any deletion occurs.
+    Either ALL succeed or NONE are deleted (full transaction).
+    """
+    if not request.upload_ids:
+        raise HTTPException(status_code=400, detail="No upload IDs provided")
+
+    if len(request.upload_ids) > 100:
+        raise HTTPException(status_code=400, detail="Cannot delete more than 100 files at once")
+
+    with engine.begin() as conn:
+        # Validate ownership of every ID before touching anything
+        for uid in request.upload_ids:
+            owner = conn.execute(
+                text("SELECT created_by_user_id FROM upload_log WHERE upload_id = :uid"),
+                {"uid": uid}
+            ).scalar()
+
+            if owner is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Upload {uid} not found"
+                )
+
+            if not can_delete_upload(user, owner):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Not authorized to delete upload {uid}"
+                )
+
+        # All checks passed — delete everything in one transaction
+        conn.execute(
+            text("DELETE FROM cleaned_data WHERE upload_id = ANY(:ids)"),
+            {"ids": request.upload_ids}
+        )
+        conn.execute(
+            text("DELETE FROM upload_log WHERE upload_id = ANY(:ids)"),
+            {"ids": request.upload_ids}
+        )
+
+    return {
+        "success": True,
+        "deleted_count": len(request.upload_ids)
+    }
+
+# ---------------- MOVE UPLOAD ----------------
+@app.patch("/upload/{upload_id}/move")
+def move_upload(
+    upload_id: int,
+    request: MoveUploadRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Move an upload to a different category.
+    - Users can only move their own uploads to their own categories.
+    - Admins can move any upload to any category owned by the upload's owner.
+    """
+    with engine.begin() as conn:
+        # Fetch upload owner and current category
+        upload_row = conn.execute(
+            text("""
+                SELECT created_by_user_id, category_id
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+
+        if upload_row is None:
+            raise HTTPException(status_code=404, detail="Upload not found")
+
+        upload_owner_id = upload_row.created_by_user_id
+
+        if not can_delete_upload(user, upload_owner_id):
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        if upload_row.category_id == request.category_id:
+            raise HTTPException(status_code=400, detail="Upload is already in this category")
+
+        # Verify target category exists and belongs to the upload's owner
+        # (admin moves stay within the original owner's categories)
+        target_owner = conn.execute(
+            text("SELECT created_by_user_id FROM categories WHERE id = :cid"),
+            {"cid": request.category_id}
+        ).scalar()
+
+        if target_owner is None:
+            raise HTTPException(status_code=404, detail="Target category not found")
+
+        if target_owner != upload_owner_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Target category does not belong to the upload's owner"
+            )
+
+        # Execute the move
+        conn.execute(
+            text("UPDATE upload_log SET category_id = :cid WHERE upload_id = :uid"),
+            {"cid": request.category_id, "uid": upload_id}
+        )
+
+    return {"success": True, "upload_id": upload_id, "new_category_id": request.category_id}
+
+# ---------------- CATEGORIES ----------------
 @app.post("/categories")
 def create_category(
     name: str = Query(...),
@@ -1379,7 +1418,6 @@ def rename_category(
         )
 
     with engine.begin() as conn:
-        # Verify ownership
         owner = conn.execute(
             text("SELECT created_by_user_id FROM categories WHERE id = :cid"),
             {"cid": category_id}
@@ -1399,65 +1437,6 @@ def rename_category(
         )
 
     return {"success": True}
-
-# ---------------- STATIC ----------------
-@app.get("/")
-def serve_upload():
-    return FileResponse(os.path.join("..", "frontend", "upload.html"))
-
-@app.get("/preview.html")
-def serve_preview():
-    return FileResponse(os.path.join("..", "frontend", "preview.html"))
-
-@app.post("/admin/users")
-def create_user(
-    email: str = Query(...),
-    password: str = Query(...),
-    role: str = Query("user"),
-    current_user: dict = Depends(get_current_user)
-):
-    # 🔒 Admin check
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-
-    if role not in ("admin", "user"):
-        raise HTTPException(status_code=400, detail="Invalid role")
-
-    password_hash = hash_password(password)
-
-    with engine.begin() as conn:
-        try:
-            conn.execute(
-                text("""
-                    INSERT INTO users (email, password_hash, role, is_active)
-                    VALUES (:email, :ph, :role, true)
-                """),
-                {
-                    "email": email.lower().strip(),
-                    "ph": password_hash,
-                    "role": role
-                }
-            )
-        except:
-            raise HTTPException(
-                status_code=400,
-                detail="User already exists"
-            )
-
-    return {"success": True}
-
-@app.get("/me")
-def me(current_user: dict = Depends(get_current_user)):
-    return current_user
-
-@app.get("/users.html")
-def serve_users():
-    return FileResponse(os.path.join("..", "frontend", "users.html"))
-
-# Add this route in your main.py with the other static file routes
-@app.get("/related.html")
-def serve_related():
-    return FileResponse(os.path.join("..", "frontend", "related.html"))
 
 @app.delete("/categories/{category_id}")
 def delete_category(
@@ -1500,6 +1479,63 @@ def delete_category(
 
     return {"success": True}
 
+# ---------------- STATIC ----------------
+@app.get("/")
+def serve_upload():
+    return FileResponse(os.path.join("..", "frontend", "upload.html"))
+
+@app.get("/preview.html")
+def serve_preview():
+    return FileResponse(os.path.join("..", "frontend", "preview.html"))
+
+@app.post("/admin/users")
+def create_user(
+    email: str = Query(...),
+    password: str = Query(...),
+    role: str = Query("user"),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    if role not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    password_hash = hash_password(password)
+
+    with engine.begin() as conn:
+        try:
+            conn.execute(
+                text("""
+                    INSERT INTO users (email, password_hash, role, is_active)
+                    VALUES (:email, :ph, :role, true)
+                """),
+                {
+                    "email": email.lower().strip(),
+                    "ph": password_hash,
+                    "role": role
+                }
+            )
+        except:
+            raise HTTPException(
+                status_code=400,
+                detail="User already exists"
+            )
+
+    return {"success": True}
+
+@app.get("/me")
+def me(current_user: dict = Depends(get_current_user)):
+    return current_user
+
+@app.get("/users.html")
+def serve_users():
+    return FileResponse(os.path.join("..", "frontend", "users.html"))
+
+@app.get("/related.html")
+def serve_related():
+    return FileResponse(os.path.join("..", "frontend", "related.html"))
+
 @app.get("/related-records")
 def related_records(
     upload_id: int,
@@ -1508,7 +1544,6 @@ def related_records(
 ):
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
-        # Step 1: Get base record identifiers
         base = conn.execute(
             text("""
                 SELECT
@@ -1527,7 +1562,6 @@ def related_records(
         email = base.email
         phone = base.phone
 
-        # Step 2: Find related records inside SAME file
         rows = conn.execute(
             text("""
                 SELECT id, row_data
@@ -1565,20 +1599,13 @@ def related_search(
     page_size: int = Query(50, ge=1, le=500),
     user: dict = Depends(get_current_user)
 ):
-    """
-    OPTIMIZED: Search for specific email or phone.
-    Uses indexes for instant results even on 10 lakh records.
-    """
-    
     offset = (page - 1) * page_size
     value = value.strip()
     normalized_phone = ''.join(c for c in value if c.isdigit())
     
-    # Build the WHERE clause dynamically to avoid matching empty strings
     where_conditions = ["LOWER(TRIM(row_data->>'email')) = LOWER(:val)"]
     query_params = {"uid": upload_id, "val": value}
     
-    # Only add phone condition if we have digits in the search value
     if normalized_phone:
         where_conditions.append("REGEXP_REPLACE(COALESCE(row_data->>'phone', ''), '[^0-9]', '', 'g') = :norm_phone")
         query_params["norm_phone"] = normalized_phone
@@ -1587,7 +1614,6 @@ def related_search(
     
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
-        # Count total (fast with indexes)
         total = conn.execute(
             text(f"""
                 SELECT COUNT(*)
@@ -1598,7 +1624,6 @@ def related_search(
             query_params
         ).scalar()
         
-        # Get paginated results (fast with indexes)
         rows = conn.execute(
             text(f"""
                 SELECT 
@@ -1641,7 +1666,7 @@ def related_grouped(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     match_type: str = Query("all", regex="^(all|email|phone|merged|both)$"),
-    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),  # ✅ ADDED
+    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),
     user: dict = Depends(get_current_user)
 ):
     if match_type == 'both':
@@ -1726,7 +1751,6 @@ def related_grouped(
                 WHERE :match_type IN ('all', 'merged')
             ),
             
-            -- ✅ FIXED: ROW_NUMBER now uses the same order_clause as the final result
             ranked_groups AS (
                 SELECT 
                     *,
@@ -1755,7 +1779,6 @@ def related_grouped(
             }
         ).fetchall()
 
-        # Count total groups
         count_query = text("""
             WITH 
             normalized AS (
@@ -1813,7 +1836,6 @@ def related_grouped(
             {"uid": upload_id, "match_type": match_type}
         ).scalar() or 0
 
-        # Format results
         formatted_groups = []
         for row in rows:
             match_display = []
@@ -1841,9 +1863,6 @@ def related_grouped_stats(
     upload_id: int,
     user: dict = Depends(get_current_user)
 ):
-    """
-    ✅ FIXED: Stats now match exactly what's displayed in /related-grouped
-    """
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
         stats = conn.execute(
@@ -1858,7 +1877,6 @@ def related_grouped_stats(
                     WHERE upload_id = :uid
                 ),
                 
-                -- Email-only groups (email duplicates with no phone duplicates)
                 email_groups AS (
                     SELECT 
                         email,
@@ -1869,7 +1887,6 @@ def related_grouped_stats(
                     HAVING COUNT(*) > 1
                 ),
                 
-                -- Phone-only groups (phone duplicates with no email duplicates)
                 phone_groups AS (
                     SELECT 
                         phone,
@@ -1880,7 +1897,6 @@ def related_grouped_stats(
                     HAVING COUNT(*) > 1
                 ),
                 
-                -- Merged groups (both email AND phone have duplicates)
                 merged_groups AS (
                     SELECT 
                         email,
@@ -1922,10 +1938,6 @@ def get_header_metadata(
     upload_id: int,
     user: dict = Depends(get_current_user)
 ):
-    """
-    Get header resolution metadata for auditing.
-    Shows original headers, final headers, and resolution type.
-    """
     with engine.begin() as conn:
         assert_upload_access(conn, upload_id, user)
         result = conn.execute(
