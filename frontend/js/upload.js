@@ -221,7 +221,6 @@ function onRowDragStart(e, uploadId, currentCategoryId) {
     dragUploadId = uploadId;
     dragCurrentCategoryId = currentCategoryId;
     e.dataTransfer.effectAllowed = "move";
-    // Add dragging style after a tick so it shows on the clone
     const row = document.getElementById(`row-${uploadId}`);
     setTimeout(() => { if (row) row.classList.add("row-dragging"); }, 0);
 }
@@ -231,7 +230,6 @@ function onRowDragEnd(uploadId) {
     dragCurrentCategoryId = null;
     const row = document.getElementById(`row-${uploadId}`);
     if (row) row.classList.remove("row-dragging");
-    // Clear all drop highlights
     document.querySelectorAll(".category.drop-target").forEach(el => {
         el.classList.remove("drop-target");
     });
@@ -284,24 +282,20 @@ function makeInlineCategoryCell(uploadId, currentCategoryId, currentCategoryName
 }
 
 function openInlineEdit(cell, uploadId, currentCategoryId) {
-    // Don't open if already editing
     if (cell.querySelector("select")) return;
 
     const currentText = cell.querySelector(".category-cell-text").textContent.trim();
 
-    // Build select
     const sel = document.createElement("select");
     sel.className = "inline-cat-select";
     sel.innerHTML = categoriesCache
         .map(c => `<option value="${c.id}" ${c.id === currentCategoryId ? "selected" : ""}>${c.name}</option>`)
         .join("");
 
-    // Replace cell content with select
     cell.innerHTML = "";
     cell.appendChild(sel);
     sel.focus();
 
-    // Save on change
     sel.addEventListener("change", async () => {
         const newId   = parseInt(sel.value);
         const newName = categoriesCache.find(c => c.id === newId)?.name || "";
@@ -310,10 +304,8 @@ function openInlineEdit(cell, uploadId, currentCategoryId) {
         await moveFile(uploadId, newId, newName);
     });
 
-    // Cancel on blur (without change)
     sel.addEventListener("blur", () => {
         setTimeout(() => {
-            // If still in DOM and unchanged, restore text
             if (cell.querySelector("select")) {
                 cell.innerHTML = `<span class="category-cell-text">
                     ${currentText}
@@ -328,7 +320,6 @@ function openInlineEdit(cell, uploadId, currentCategoryId) {
         }, 150);
     });
 
-    // Cancel on Escape
     sel.addEventListener("keydown", (e) => {
         if (e.key === "Escape") { sel.blur(); }
     });
@@ -371,7 +362,6 @@ async function loadCategories() {
             div.dataset.categoryId = c.id;
             div.dataset.categoryName = c.name;
 
-            // Drop target event listeners
             div.addEventListener("dragover",  (e) => onCategoryDragOver(e, c.id));
             div.addEventListener("dragenter", (e) => onCategoryDragEnter(e, c.id));
             div.addEventListener("dragleave", (e) => onCategoryDragLeave(e));
@@ -394,9 +384,6 @@ async function loadCategories() {
             categoryList.appendChild(div);
         });
 
-        // Also make "Uncategorized" a drop target
-        const uncatDiv = document.querySelector(".category[onclick*=\"applyFilter('uncat'\"]");
-        // Find uncategorized entry
         const uncatEntry = cats.find(c => c.name.toLowerCase() === "uncategorized");
         if (uncatEntry) {
             const sidebarUncatEl = document.querySelector(".sidebar-top .category:nth-child(3)");
@@ -638,7 +625,7 @@ function pollUploadStatus(uploadId) {
             const data = await res.json();
             if (data.processing_status === "ready") {
                 clearInterval(interval);
-                showToast(`✅ Processing complete! ${data.total_records?.toLocaleString()} records ready.`, "success", 4000);
+                showToast(`✅ Processing complete! ${fmtNum(data.total_records)} records ready.`, "success", 4000);
                 loadUploads();
                 loadCategories();
             } else if (data.processing_status === "failed") {
@@ -829,6 +816,26 @@ async function loadUploads(showSkeleton = false) {
     }
 }
 
+// ─── NUMBER FORMAT HELPERS ────────────────────────────────────────────────────
+function fmtNum(n) {
+    if (n === null || n === undefined) return "—";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+    if (n >= 1_000)     return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+    return n.toLocaleString();
+}
+
+function fmtNumFull(n) {
+    if (n === null || n === undefined) return "";
+    return n.toLocaleString();
+}
+
+function fmtDate(dateStr) {
+    if (!dateStr) return "—";
+    return new Date(dateStr).toLocaleDateString("en-GB", {
+        day: "numeric", month: "short", year: "numeric"
+    });
+}
+
 // ─── RENDER TABLE ─────────────────────────────────────────────────────────────
 function renderTable() {
     const totalPages = Math.ceil(filteredUploads.length / PAGE_SIZE);
@@ -839,7 +846,7 @@ function renderTable() {
     const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedUploadIds.has(id));
 
     let header = `<thead><tr>
-        <th style="width:40px; text-align:center;">
+        <th style="width:44px; text-align:center;">
             <input type="checkbox" id="selectAllCheckbox"
                 ${allPageSelected ? "checked" : ""}
                 onchange="toggleSelectAll(this)"
@@ -871,13 +878,25 @@ function renderTable() {
         const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
         const canMove   = currentUser.role !== "admin" && !isProcessing;
 
-        let totalCell = isProcessing
-            ? '<span class="processing-badge">⏳ Processing...</span>'
-            : isFailed
-                ? '<span class="failed-badge">❌ Failed</span>'
-                : r.total_records?.toLocaleString() ?? '—';
+        // ── TOTAL RECORDS cell — compact number + tooltip with full number ──
+        let totalCell, totalAttr = "";
+        if (isProcessing) {
+            totalCell = '<span class="processing-badge">⏳ Processing...</span>';
+        } else if (isFailed) {
+            totalCell = '<span class="failed-badge">❌ Failed</span>';
+        } else {
+            const raw = r.total_records;
+            totalCell = fmtNum(raw);
+            if (raw >= 1000) totalAttr = `data-full-number="${fmtNumFull(raw)}"`;
+        }
 
-        const dupCell = isProcessing ? '—' : (r.duplicate_records?.toLocaleString() ?? '—');
+        // ── DUPLICATES cell — compact number + tooltip ──
+        let dupCell = "—", dupAttr = "";
+        if (!isProcessing && r.duplicate_records !== null && r.duplicate_records !== undefined) {
+            const rawDup = r.duplicate_records;
+            dupCell = fmtNum(rawDup);
+            if (rawDup >= 1000) dupAttr = `data-full-number="${fmtNumFull(rawDup)}"`;
+        }
 
         let viewBtn = isProcessing
             ? `<button class="btn-view disabled" disabled title="File is still processing...">⏳ Processing</button>`
@@ -888,10 +907,8 @@ function renderTable() {
 
         const adminCol = currentUser.role === "admin" ? `<td>${r.uploaded_by}</td>` : '';
 
-        // Inline category cell (clickable) or plain text
         const categoryCell = makeInlineCategoryCell(r.upload_id, r.category_id, r.category, canMove);
 
-        // Draggable row (only for non-admin, non-processing)
         const draggable = canMove ? `draggable="true"
             ondragstart="onRowDragStart(event, ${r.upload_id}, ${r.category_id})"
             ondragend="onRowDragEnd(${r.upload_id})"` : '';
@@ -906,16 +923,16 @@ function renderTable() {
                     onchange="toggleRowSelect(this, ${r.upload_id})"
                     style="cursor:pointer; width:16px; height:16px;">
             </td>
-            <td>
+            <td title="${r.filename}">
                 <div style="display:flex;align-items:center;gap:8px;">
                     ${canMove ? `<span class="drag-handle" title="Drag to move">⠿</span>` : ''}
-                    <span style="font-size:18px;">📄</span>
-                    <strong>${r.filename}</strong>
+                    <span style="font-size:18px;flex-shrink:0;">📄</span>
+                    <strong style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;">${r.filename}</strong>
                 </div>
             </td>
             ${categoryCell}
-            <td>${totalCell}</td>
-            <td>${dupCell}</td>
+            <td ${totalAttr}>${totalCell}</td>
+            <td ${dupAttr}>${dupCell}</td>
             ${adminCol}
             <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
             <td><div class="action-group">${viewBtn}${deleteBtn}</div></td>
@@ -1070,20 +1087,6 @@ async function del(uid) {
 }
 
 // ─── PROFILE PANEL ────────────────────────────────────────────────────────────
-function fmtNum(n) {
-    if (n === null || n === undefined) return "—";
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-    if (n >= 1_000)     return (n / 1_000).toFixed(1) + "k";
-    return n.toLocaleString();
-}
-
-function fmtDate(dateStr) {
-    if (!dateStr) return "—";
-    return new Date(dateStr).toLocaleDateString("en-GB", {
-        day: "numeric", month: "short", year: "numeric"
-    });
-}
-
 async function openProfilePanel() {
     const overlay = document.getElementById("profileOverlay");
     const panel   = document.getElementById("profilePanel");

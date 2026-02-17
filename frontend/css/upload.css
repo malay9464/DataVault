@@ -758,6 +758,8 @@ table {
   min-width: 900px;
   border-collapse: separate;
   border-spacing: 0;
+  /* FIX: lock the layout so columns don't flex with content */
+  table-layout: fixed;
 }
 
 th, td {
@@ -776,6 +778,10 @@ th {
   position: sticky;
   top: 0;
   z-index: 10;
+  /* FIX: prevent header text from wrapping */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 th:first-child { border-radius: var(--radius-md) 0 0 0; }
@@ -804,6 +810,10 @@ tr.row-selected:hover td {
 
 td {
   font-size: 14px;
+  /* FIX: prevent all cells from overflowing */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 td:not(:first-child) {
@@ -816,6 +826,63 @@ th:first-child {
   text-align: center;
 }
 
+/* ---------- FIXED COLUMN WIDTHS ---------- */
+/* Checkbox */
+table th:nth-child(1),
+table td:nth-child(1) { width: 44px; }
+
+/* File name — most space, left-aligned */
+table th:nth-child(2),
+table td:nth-child(2) {
+  width: 28%;
+  text-align: left;
+}
+
+/* Category */
+table th:nth-child(3),
+table td:nth-child(3) {
+  width: 20%;
+  text-align: left;
+}
+
+/* Total Records */
+table th:nth-child(4),
+table td:nth-child(4) { width: 11%; }
+
+/* Duplicates */
+table th:nth-child(5),
+table td:nth-child(5) { width: 11%; }
+
+/* Uploaded By (admin only — 6th col) */
+table th:nth-child(6),
+table td:nth-child(6) { width: 14%; }
+
+/* Status */
+table th:nth-last-child(2),
+table td:nth-last-child(2) { width: 10%; }
+
+/* Actions */
+table th:last-child,
+table td:last-child {
+  width: 130px;
+  overflow: visible; /* let action buttons breathe */
+}
+
+/* File cell inner layout — keep icon + name together */
+table td:nth-child(2) > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+table td:nth-child(2) strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+
 /* ---------- STATUS INDICATORS ---------- */
 .status-indicator {
   display: inline-flex;
@@ -825,6 +892,7 @@ th:first-child {
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .status-clean {
@@ -852,7 +920,7 @@ th:first-child {
   display: flex;
   gap: 6px;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .btn-view {
@@ -865,6 +933,7 @@ th:first-child {
   border: none;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn-view:hover {
@@ -884,6 +953,7 @@ th:first-child {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn-move:hover {
@@ -902,6 +972,7 @@ th:first-child {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn-delete:hover {
@@ -1473,6 +1544,7 @@ tr.row-dragging td {
 /* Clickable category cell */
 td.category-cell {
     cursor: pointer;
+    overflow: visible; /* allow dropdown to escape */
 }
 
 .category-cell-text {
@@ -1482,6 +1554,10 @@ td.category-cell {
     padding: 3px 6px;
     border-radius: 6px;
     transition: background 0.15s ease;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 td.category-cell:hover .category-cell-text {
@@ -1519,4 +1595,41 @@ td.category-cell:hover .category-edit-icon {
 
 .inline-cat-select:focus {
     border-color: #1e40af;
+}
+
+/* ---------- NUMBER TOOLTIP ---------- */
+/* Show full number on hover for K/M formatted cells */
+td[data-full-number] {
+  cursor: default;
+  position: relative;
+}
+
+td[data-full-number]:hover::after {
+  content: attr(data-full-number);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  pointer-events: none;
+}
+
+td[data-full-number]:hover::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #1e293b;
+  z-index: 51;
+  pointer-events: none;
 }
