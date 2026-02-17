@@ -288,11 +288,17 @@ function openInlineEdit(cell, uploadId, currentCategoryId) {
 
     const sel = document.createElement("select");
     sel.className = "inline-cat-select";
+    // Force dropdown to stay within the column — prevents wide category names from overflowing
+    sel.style.cssText = "width:100%;max-width:100%;min-width:0;box-sizing:border-box;";
     sel.innerHTML = categoriesCache
-        .map(c => `<option value="${c.id}" ${c.id === currentCategoryId ? "selected" : ""}>${c.name}</option>`)
+        .map(c => {
+            const label = c.name.length > 40 ? c.name.substring(0, 38) + "…" : c.name;
+            return `<option value="${c.id}" ${c.id === currentCategoryId ? "selected" : ""}>${label}</option>`;
+        })
         .join("");
 
     cell.innerHTML = "";
+    cell.style.overflow = "hidden"; // lock cell during editing
     cell.appendChild(sel);
     sel.focus();
 
@@ -307,6 +313,7 @@ function openInlineEdit(cell, uploadId, currentCategoryId) {
     sel.addEventListener("blur", () => {
         setTimeout(() => {
             if (cell.querySelector("select")) {
+                cell.style.overflow = "hidden"; // restore after edit closes
                 cell.innerHTML = `<span class="category-cell-text">
                     ${currentText}
                     <svg class="category-edit-icon" width="12" height="12" viewBox="0 0 24 24" 

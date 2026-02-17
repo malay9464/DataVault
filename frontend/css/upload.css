@@ -859,7 +859,11 @@ table td:nth-child(6) { width: 14%; }
 
 /* Status */
 table th:nth-last-child(2),
-table td:nth-last-child(2) { width: 10%; }
+table td:nth-last-child(2) {
+  width: 10%;
+  overflow: visible; /* badge must not be clipped */
+  white-space: nowrap;
+}
 
 /* Actions */
 table th:last-child,
@@ -1545,6 +1549,8 @@ tr.row-dragging td {
 td.category-cell {
     cursor: pointer;
     overflow: visible; /* allow dropdown to escape */
+    /* but constrain children to the column width */
+    max-width: 0; /* combined with table-layout:fixed this enforces the column width */
 }
 
 .category-cell-text {
@@ -1589,7 +1595,11 @@ td.category-cell:hover .category-edit-icon {
     cursor: pointer;
     outline: none;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-    min-width: 120px;
+    /* FIX: constrain width to the cell — never overflow into neighbours */
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     transition: border-color 0.15s ease;
 }
 
