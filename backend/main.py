@@ -1131,10 +1131,6 @@ def dashboard_stats(
         ]
     }
 
-@app.get("/dashboard.html")
-def serve_dashboard():
-    return FileResponse(os.path.join("..", "frontend", "dashboard.html"))
-
 @app.get("/search")
 def search_data(
     upload_id: int,
