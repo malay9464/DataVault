@@ -1434,3 +1434,89 @@ th:first-child {
     content: "●";
     color: #f59e0b;
 }
+
+.drag-handle {
+    cursor: grab;
+    color: #94a3b8;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s ease;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.drag-handle:hover { color: #475569; }
+.drag-handle:active { cursor: grabbing; }
+
+/* Row being dragged */
+tr.row-dragging td {
+    opacity: 0.45;
+    background: #eff6ff !important;
+}
+
+/* Sidebar category drop target highlight */
+.category.drop-target {
+    background: rgba(37, 99, 235, 0.25) !important;
+    border: 2px dashed #2563eb !important;
+    transform: translateX(3px) scale(1.02);
+    transition: all 0.15s ease;
+}
+
+.category.drop-target .count-badge {
+    background: rgba(37, 99, 235, 0.4);
+}
+
+/* ─── INLINE CATEGORY EDIT ───────────────────────────────────────────────── */
+
+/* Clickable category cell */
+td.category-cell {
+    cursor: pointer;
+}
+
+.category-cell-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+}
+
+td.category-cell:hover .category-cell-text {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+/* Edit pencil icon — hidden until hover */
+.category-edit-icon {
+    opacity: 0;
+    color: #2563eb;
+    transition: opacity 0.15s ease;
+    flex-shrink: 0;
+}
+
+td.category-cell:hover .category-edit-icon {
+    opacity: 1;
+}
+
+/* Inline select dropdown */
+.inline-cat-select {
+    padding: 5px 10px;
+    border: 1.5px solid #2563eb;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    background: #fff;
+    color: #0f172a;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    min-width: 120px;
+    transition: border-color 0.15s ease;
+}
+
+.inline-cat-select:focus {
+    border-color: #1e40af;
+}
