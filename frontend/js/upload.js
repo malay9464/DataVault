@@ -956,6 +956,178 @@ async function del(uid) {
     }
 }
 
+// ─── PROFILE PANEL ───────────────────────────────────────────────────────────
+
+function fmtNum(n) {
+    if (n === null || n === undefined) return "—";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + "k";
+    return n.toLocaleString();
+}
+
+function fmtDate(dateStr) {
+    if (!dateStr) return "—";
+    return new Date(dateStr).toLocaleDateString("en-GB", {
+        day: "numeric", month: "short", year: "numeric"
+    });
+}
+
+async function openProfilePanel() {
+    const overlay = document.getElementById("profileOverlay");
+    const panel   = document.getElementById("profilePanel");
+
+    // Show overlay + panel
+    overlay.style.display = "block";
+    panel.style.display   = "flex";
+    // Trigger slide-in animation
+    requestAnimationFrame(() => {
+        panel.style.transform = "translateX(0)";
+    });
+
+    // Reset password form
+    resetPasswordForm();
+
+    try {
+        const res = await authFetch("/me/profile");
+        if (!res || !res.ok) {
+            showToast("Failed to load profile", "error");
+            return;
+        }
+        const d = await res.json();
+
+        // Avatar initials
+        const initials = d.email ? d.email[0].toUpperCase() : "?";
+        document.getElementById("profileAvatar").textContent = initials;
+
+        // Email
+        document.getElementById("profileEmail").textContent     = d.email;
+        document.getElementById("profileEmailInfo").textContent = d.email;
+
+        // Role badge
+        const roleBadge = document.getElementById("profileRoleBadge");
+        if (d.role === "admin") {
+            roleBadge.textContent = "🛡 Admin";
+            roleBadge.style.cssText += "background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff;";
+        } else {
+            roleBadge.textContent = "User";
+            roleBadge.style.cssText += "background:rgba(99,102,241,0.25); color:#e0e7ff;";
+        }
+
+        // Status badge
+        const statusBadge = document.getElementById("profileStatusBadge");
+        if (d.is_active) {
+            statusBadge.textContent = "● Active";
+            statusBadge.style.cssText += "background:rgba(22,163,74,0.2); color:#86efac;";
+        } else {
+            statusBadge.textContent = "● Inactive";
+            statusBadge.style.cssText += "background:rgba(220,38,38,0.2); color:#fca5a5;";
+        }
+
+        // Stats
+        document.getElementById("profileUploads").textContent = fmtNum(d.total_uploads);
+        document.getElementById("profileRecords").textContent = fmtNum(d.total_records);
+
+        // Info rows
+        document.getElementById("profileRoleInfo").textContent = d.role === "admin" ? "Administrator" : "User";
+
+        const statusInfo = document.getElementById("profileStatusInfo");
+        statusInfo.textContent    = d.is_active ? "Active" : "Inactive";
+        statusInfo.style.color    = d.is_active ? "#16a34a" : "#dc2626";
+
+        document.getElementById("profileSince").textContent = fmtDate(d.created_at);
+
+    } catch (err) {
+        console.error(err);
+        showToast("Network error loading profile", "error");
+    }
+}
+
+function closeProfilePanel() {
+    const overlay = document.getElementById("profileOverlay");
+    const panel   = document.getElementById("profilePanel");
+
+    panel.style.transform = "translateX(100%)";
+    setTimeout(() => {
+        overlay.style.display = "none";
+        panel.style.display   = "none";
+    }, 300);
+}
+
+function togglePasswordForm() {
+    const form    = document.getElementById("passwordForm");
+    const chevron = document.getElementById("pwChevron");
+    const isOpen  = form.style.display !== "none";
+
+    form.style.display   = isOpen ? "none" : "block";
+    chevron.style.transform = isOpen ? "rotate(0deg)" : "rotate(180deg)";
+
+    if (!isOpen) {
+        // Reset fields on open
+        document.getElementById("profileNewPw").value     = "";
+        document.getElementById("profileConfirmPw").value = "";
+        document.getElementById("pwError").style.display  = "none";
+    }
+}
+
+function resetPasswordForm() {
+    const form = document.getElementById("passwordForm");
+    if (form) form.style.display = "none";
+    const chevron = document.getElementById("pwChevron");
+    if (chevron) chevron.style.transform = "rotate(0deg)";
+    const newPw = document.getElementById("profileNewPw");
+    if (newPw) newPw.value = "";
+    const confirmPw = document.getElementById("profileConfirmPw");
+    if (confirmPw) confirmPw.value = "";
+    const pwError = document.getElementById("pwError");
+    if (pwError) pwError.style.display = "none";
+}
+
+async function savePassword() {
+    const newPw     = document.getElementById("profileNewPw").value.trim();
+    const confirmPw = document.getElementById("profileConfirmPw").value.trim();
+    const errorEl   = document.getElementById("pwError");
+
+    errorEl.style.display = "none";
+
+    if (!newPw) {
+        errorEl.textContent    = "Please enter a new password.";
+        errorEl.style.display  = "block";
+        return;
+    }
+    if (newPw.length < 6) {
+        errorEl.textContent    = "Password must be at least 6 characters.";
+        errorEl.style.display  = "block";
+        return;
+    }
+    if (newPw !== confirmPw) {
+        errorEl.textContent    = "Passwords do not match.";
+        errorEl.style.display  = "block";
+        return;
+    }
+
+    try {
+        const res = await authFetch("/me/change-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_password: newPw })
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            errorEl.textContent   = err.detail || "Failed to change password.";
+            errorEl.style.display = "block";
+            return;
+        }
+
+        showToast("Password changed successfully ✓", "success");
+        resetPasswordForm();
+
+    } catch (err) {
+        errorEl.textContent   = "Network error. Please try again.";
+        errorEl.style.display = "block";
+    }
+}
+
 // ─── MISC ─────────────────────────────────────────────────────────────────────
 function logout() {
     localStorage.removeItem("access_token");

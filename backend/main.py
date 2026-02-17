@@ -2177,6 +2177,69 @@ def get_header_metadata(
             "header_status": result.header_status
         }
 
+@app.get("/me/profile")
+def get_my_profile(current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        # Get user details
+        user = conn.execute(
+            text("""
+                SELECT id, email, role, is_active, created_at
+                FROM users
+                WHERE id = :uid
+            """),
+            {"uid": current_user["id"]}
+        ).fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get upload stats
+        stats = conn.execute(
+            text("""
+                SELECT
+                    COUNT(*)                        AS total_uploads,
+                    COALESCE(SUM(total_records), 0) AS total_records
+                FROM upload_log
+                WHERE created_by_user_id = :uid
+                  AND processing_status != 'processing'
+            """),
+            {"uid": current_user["id"]}
+        ).fetchone()
+
+    return {
+        "email":          user.email,
+        "role":           user.role,
+        "is_active":      user.is_active,
+        "created_at":     str(user.created_at),
+        "total_uploads":  stats.total_uploads,
+        "total_records":  int(stats.total_records),
+    }
+
+
+@app.post("/me/change-password")
+def change_my_password(
+    payload: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    new_password = payload.get("new_password", "").strip()
+
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters"
+        )
+
+    # Hash the new password using your existing utility
+    hashed = hash_password(new_password)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET password_hash = :pw WHERE id = :uid"),
+            {"pw": hashed, "uid": current_user["id"]}
+        )
+
+    return {"success": True}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
