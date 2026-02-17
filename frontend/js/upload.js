@@ -275,16 +275,16 @@ async function loadUserCategories(userId) {
     wrapper.style.cssText = "padding:8px 0 4px 0;position:relative;";
     wrapper.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;padding:0 0 8px 0;">
-            <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Category</span>
+            <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Sort by</span>
             <div style="position:relative;flex:1;">
                 <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
-                    style="width:100%;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+                    style="width:20%;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
                            background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
                            appearance:none;outline:none;">
                     <option value="">All Categories</option>
                     ${cats.map(c => `<option value="${c.id}">${c.name} (${c.uploads})</option>`).join("")}
                 </select>
-                <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#64748b;"
+                <svg style="position:absolute;left:219px;top:50%;transform:translateY(-50%);pointer-events:none;color:#64748b;"
                      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
@@ -419,16 +419,18 @@ async function upload() {
             return;
         }
         if (result.success) {
-            progressFill.style.width = "100%";
-            progressText.textContent = `Done! ${result.total_records?.toLocaleString() || ""} records processed.`;
-            setTimeout(() => {
-                showToast("Upload successful! ✨", "success");
-                uploadProgress.style.display = "none";
-                progressFill.style.width = "0%";
-                clearUploadFields();
-                loadCategories();
-                loadUploads();
-            }, 1000);
+            // File queued — return immediately, processing happens in background
+            showToast("File uploaded! Processing in background... ⏳", "success");
+            uploadProgress.style.display = "none";
+            progressFill.style.width = "0%";
+            clearUploadFields();
+            loadCategories();
+            loadUploads();
+
+            // Poll for processing completion
+            if (result.status === "processing") {
+                pollUploadStatus(result.upload_id);
+            }
         }
     } catch (err) {
         eventSource.close();
@@ -441,6 +443,50 @@ async function upload() {
         uploadBox.classList.remove("disabled");
         checkUploadReady();
     }
+}
+
+function pollUploadStatus(uploadId) {
+    const maxAttempts = 120; // 10 minutes max (120 × 5s)
+    let attempts = 0;
+
+    const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+            clearInterval(interval);
+            return;
+        }
+
+        try {
+            const res = await authFetch(`/upload/${uploadId}/status`);
+            if (!res.ok) {
+                clearInterval(interval);
+                return;
+            }
+
+            const data = await res.json();
+
+            if (data.processing_status === "ready") {
+                clearInterval(interval);
+                showToast(
+                    `✅ Processing complete! ${data.total_records?.toLocaleString()} records ready.`,
+                    "success",
+                    4000
+                );
+                loadUploads(); // Refresh file list with final counts
+                loadCategories();
+
+            } else if (data.processing_status === "failed") {
+                clearInterval(interval);
+                showToast("❌ File processing failed. Please try again.", "error", 5000);
+                loadUploads();
+            }
+            // if still 'processing', do nothing and wait for next poll
+
+        } catch (err) {
+            clearInterval(interval);
+        }
+
+    }, 5000); // poll every 5 seconds
 }
 
 function clearUploadFields() {
@@ -625,7 +671,6 @@ function renderTable() {
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
 
-    // All IDs on this page
     const pageIds = data.map(r => r.upload_id);
     const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedUploadIds.has(id));
 
@@ -646,16 +691,57 @@ function renderTable() {
     uploadTable.innerHTML = header;
 
     data.forEach(r => {
+        const isProcessing = r.processing_status === 'processing';
+        const isFailed = r.processing_status === 'failed';
+
         const dupPercentage = r.total_records > 0
             ? (r.duplicate_records / r.total_records * 100).toFixed(1) : 0;
         let statusClass = "status-clean";
         let statusText = "Clean";
-        if (dupPercentage > 20) { statusClass = "status-warning"; statusText = `${dupPercentage}% Dup`; }
+        if (isProcessing) { statusClass = "status-processing"; statusText = "Processing"; }
+        else if (isFailed) { statusClass = "status-warning"; statusText = "Failed"; }
+        else if (dupPercentage > 20) { statusClass = "status-warning"; statusText = `${dupPercentage}% Dup`; }
         else if (dupPercentage > 0) { statusText = `${dupPercentage}% Dup`; }
 
         const isChecked = selectedUploadIds.has(r.upload_id);
         const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
-        const canMove   = currentUser.role !== "admin"; // users only; admin can't manage categories
+        const canMove = currentUser.role !== "admin";
+
+        // Total records cell
+        let totalCell = '';
+        if (isProcessing) {
+            totalCell = '<span class="processing-badge">⏳ Processing...</span>';
+        } else if (isFailed) {
+            totalCell = '<span class="failed-badge">❌ Failed</span>';
+        } else {
+            totalCell = r.total_records?.toLocaleString() ?? '—';
+        }
+
+        // Duplicates cell
+        const dupCell = isProcessing ? '—' : (r.duplicate_records?.toLocaleString() ?? '—');
+
+        // View button
+        let viewBtn = '';
+        if (isProcessing) {
+            viewBtn = `<button class="btn-view disabled" disabled title="File is still processing...">⏳ Processing</button>`;
+        } else {
+            viewBtn = `<button class="btn-view" onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">View</button>`;
+        }
+
+        // Move button
+        let moveBtn = '';
+        if (canMove && !isProcessing) {
+            moveBtn = `<button class="btn-move" onclick="openMoveModal(${r.upload_id}, ${r.category_id}, '${r.filename.replace(/'/g, "\\'")}')">Move</button>`;
+        }
+
+        // Delete button
+        const deleteBtn = `<button class="btn-delete ${canDelete ? '' : 'disabled'}"
+            ${canDelete ? `onclick="del(${r.upload_id})"` : 'disabled'}>
+            Delete
+        </button>`;
+
+        // Admin column
+        const adminCol = currentUser.role === "admin" ? `<td>${r.uploaded_by}</td>` : '';
 
         let row = `<tr id="row-${r.upload_id}" class="${isChecked ? 'row-selected' : ''}">
             <td style="text-align:center;">
@@ -673,32 +759,18 @@ function renderTable() {
                 </div>
             </td>
             <td>${r.category}</td>
-            <td>${r.total_records.toLocaleString()}</td>
-            <td>${r.duplicate_records.toLocaleString()}</td>`;
-
-        if (currentUser.role === "admin") row += `<td>${r.uploaded_by}</td>`;
-
-        row += `<td><span class="status-indicator ${statusClass}">${statusText}</span></td>`;
-
-        row += `<td>
-            <div class="action-group">
-                <button class="btn-view"
-                    onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">
-                    View
-                </button>`;
-
-        if (canMove) {
-            row += `<button class="btn-move"
-                onclick="openMoveModal(${r.upload_id}, ${r.category_id}, '${r.filename.replace(/'/g, "\\'")}')">
-                Move
-            </button>`;
-        }
-
-        row += `<button class="btn-delete ${canDelete ? "" : "disabled"}"
-                ${canDelete ? `onclick="del(${r.upload_id})"` : "disabled"}>
-                Delete
-            </button>
-            </div></td></tr>`;
+            <td>${totalCell}</td>
+            <td>${dupCell}</td>
+            ${adminCol}
+            <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
+            <td>
+                <div class="action-group">
+                    ${viewBtn}
+                    ${moveBtn}
+                    ${deleteBtn}
+                </div>
+            </td>
+        </tr>`;
 
         uploadTable.innerHTML += row;
     });
@@ -938,12 +1010,23 @@ function updateURL() {
     history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
 }
 
+function resumePollingForProcessingFiles() {
+    // On page load, find any files still processing and resume polling
+    const processing = allUploads.filter(
+        r => r.processing_status === 'processing'
+    );
+    processing.forEach(r => {
+        pollUploadStatus(r.upload_id);
+    });
+}
+
 async function initPage() {
     await loadUser();
     await loadCategories();
     if (currentUser && currentUser.role === "admin") await loadAdminUserList();
     await loadUploads(true);
     checkUploadReady();
+    resumePollingForProcessingFiles();
 }
 
 initPage();

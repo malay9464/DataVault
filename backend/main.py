@@ -32,6 +32,16 @@ from collections import defaultdict
 import asyncio
 import hashlib
 import python_calamine
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+import multiprocessing
+from auth import SECRET_KEY, ALGORITHM
+import jwt as pyjwt
+import time as _t
+import shutil
+
+multiprocessing.freeze_support()
+executor = ThreadPoolExecutor(max_workers=4)
 
 # In-memory progress store: upload_id -> progress dict
 upload_progress_store: dict = {}
@@ -137,7 +147,9 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     email_cols = []
     for c in df.columns:
-        if c in {"email", "e_mail", "mail", "email_address"}:
+        if c in {"email", "e_mail", "mail", "email_address", "email_id", 
+                 "mail_id", "e_mail_id", "e-mail", "e-mail_address", "e-mail_id", 
+                 "e-mailid", "emailid", "emailaddress", "e_mail_address"}:
             email_cols = [c]
             break
 
@@ -145,7 +157,8 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     for c in df.columns:
         if c in {"phone", "phone_no", "phone_number", "mobile", "mobile_no",
                  "mobile_number", "contact_no", "contact_number",
-                 "cell", "cell_no", "cell_number"}:
+                 "cell", "cell_no", "cell_number", "telephone", "telephone_no", 
+                 "telephone_number", "contact", "contact_information"}:
             phone_cols = [c]
             break
     if not phone_cols:
@@ -232,8 +245,6 @@ async def upload_progress_stream(
 ):
     """SSE progress stream. Token passed as query param (EventSource limitation)."""
     try:
-        from auth import SECRET_KEY, ALGORITHM
-        import jwt as pyjwt
         payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("user_id")
         if not user_id:
@@ -267,6 +278,75 @@ async def upload_progress_stream(
         }
     )
 
+def _process_file_sync(contents: bytes, name: str, upload_id: int) -> tuple:
+
+    total_records = 0
+    duplicate_records = 0
+    seen_hashes = set()
+
+    def update(pct, msg):
+        upload_progress_store[upload_id] = {
+            "percent": pct, "status": "processing", "message": msg
+        }
+
+    if name.endswith(".xlsx") or name.endswith(".xls"):
+        update(20, "Reading Excel file...")
+        try:
+            df = pd.read_excel(io.BytesIO(contents), engine="calamine", dtype=str)
+        except Exception:
+            df = pd.read_excel(io.BytesIO(contents), dtype=str)
+
+        total_records = len(df)
+        update(50, f"Normalizing {total_records:,} rows...")
+        df = normalize_dataframe(df)
+
+        update(68, "Deduplicating...")
+        df["__hash"] = pd.util.hash_pandas_object(df, index=False).astype(str)
+        df = df.drop_duplicates(subset="__hash")
+        duplicate_records = total_records - len(df)
+        df = df.drop(columns=["__hash"])
+
+        update(82, "Saving to database...")
+        copy_cleaned_data(engine, upload_id, df)
+
+    elif name.endswith(".csv"):
+        estimated_total = max(contents.count(b'\n') - 1, 1)
+        update(20, "Processing rows...")
+
+        def csv_reader():
+            try:
+                return pd.read_csv(
+                    io.BytesIO(contents), chunksize=500_000,
+                    encoding="utf-8", low_memory=False, dtype=str
+                )
+            except UnicodeDecodeError:
+                return pd.read_csv(
+                    io.BytesIO(contents), chunksize=500_000,
+                    encoding="latin1", low_memory=False, dtype=str
+                )
+
+        rows_done = 0
+        for chunk in csv_reader():
+            total_records += len(chunk)
+            chunk = normalize_dataframe(chunk)
+            chunk["__hash"] = pd.util.hash_pandas_object(
+                chunk, index=False
+            ).astype(str)
+            new_mask = ~chunk["__hash"].isin(seen_hashes)
+            chunk = chunk[new_mask]
+            seen_hashes.update(chunk["__hash"].tolist())
+            chunk = chunk.drop(columns=["__hash"])
+            copy_cleaned_data(engine, upload_id, chunk)
+
+            rows_done += len(chunk)
+            pct = int(20 + (rows_done / estimated_total) * 68)
+            update(min(pct, 88),
+                   f"Processed {rows_done:,} / {estimated_total:,} rows...")
+
+        duplicate_records = total_records - len(seen_hashes)
+
+    return total_records, duplicate_records
+
 @app.post("/upload")
 async def upload_file(
     category_id: int = Query(...),
@@ -275,12 +355,15 @@ async def upload_file(
     user: dict = Depends(get_current_user)
 ):
     if user["role"] == "admin":
-        raise HTTPException(status_code=403, detail="Admins cannot upload files")
+        raise HTTPException(
+            status_code=403, detail="Admins cannot upload files"
+        )
 
     contents = await file.read()
     original_filename = file.filename
     name = original_filename.lower()
 
+    # ── Duplicate filename check ──
     with engine.begin() as conn:
         exists = conn.execute(
             text("""
@@ -292,31 +375,32 @@ async def upload_file(
         ).scalar()
 
     if exists:
-        raise HTTPException(status_code=409, detail="File with the same name already exists")
+        raise HTTPException(
+            status_code=409,
+            detail="File with the same name already exists"
+        )
 
     upload_id = upload_id_hint if upload_id_hint else int(time.time() * 1000000)
-    upload_progress_store[upload_id] = {
-        "percent": 5,
-        "status": "processing",
-        "message": "Reading file..."
-    }
 
+    # ── Header detection (reads only 100 rows — fast) ──
     if name.endswith(".csv"):
         try:
-            preview_df = pd.read_csv(io.BytesIO(contents), nrows=100, encoding="utf-8")
+            preview_df = pd.read_csv(
+                io.BytesIO(contents), nrows=100, encoding="utf-8"
+            )
         except UnicodeDecodeError:
-            preview_df = pd.read_csv(io.BytesIO(contents), nrows=100, encoding="latin1")
+            preview_df = pd.read_csv(
+                io.BytesIO(contents), nrows=100, encoding="latin1"
+            )
     elif name.endswith(".xls") or name.endswith(".xlsx"):
-        preview_df = pd.read_excel(io.BytesIO(contents), nrows=100)
+        try:
+            preview_df = pd.read_excel(
+                io.BytesIO(contents), nrows=100, engine="calamine"
+            )
+        except Exception:
+            preview_df = pd.read_excel(io.BytesIO(contents), nrows=100)
     else:
-        upload_progress_store.pop(upload_id, None)
         raise HTTPException(status_code=400, detail="Unsupported file")
-
-    upload_progress_store[upload_id] = {
-        "percent": 10,
-        "status": "processing",
-        "message": "Detecting headers..."
-    }
 
     case_type, metadata = detect_header_case(preview_df)
     column_samples = get_column_samples(preview_df)
@@ -327,174 +411,40 @@ async def upload_file(
         'samples': column_samples
     }
 
+    # ── Header resolution redirect ──
     if case_type in ['missing', 'suspicious']:
         temp_dir = tempfile.gettempdir()
-        temp_file_path = os.path.join(temp_dir, f"datavault_{upload_id}.data")
-        temp_meta_path = os.path.join(temp_dir, f"datavault_{upload_id}.meta")
-
-        with open(temp_file_path, 'wb') as f:
+        with open(os.path.join(temp_dir, f"datavault_{upload_id}.data"), 'wb') as f:
             f.write(contents)
-
-        temp_metadata = {
-            'upload_id': upload_id,
-            'category_id': category_id,
-            'filename': original_filename,
-            'user_id': user["id"],
-            'created_at': time.time(),
-            'original_headers': original_headers
-        }
-
-        with open(temp_meta_path, 'w') as f:
-            json.dump(temp_metadata, f)
-
-        upload_progress_store.pop(upload_id, None)
-
+        with open(os.path.join(temp_dir, f"datavault_{upload_id}.meta"), 'w') as f:
+            json.dump({
+                'upload_id': upload_id,
+                'category_id': category_id,
+                'filename': original_filename,
+                'user_id': user["id"],
+                'created_at': time.time(),
+                'original_headers': original_headers
+            }, f)
         return {
             "success": False,
             "status": "pending_headers",
             "upload_id": upload_id,
             "case_type": case_type,
-            "message": "Headers need review" if case_type == 'missing' else "First row might be data",
+            "message": "Headers need review" if case_type == 'missing'
+                       else "First row might be data",
             "headers": original_headers
         }
 
-    total_records = 0
-    duplicate_records = 0
-    seen_hashes = set()
-
-    upload_progress_store[upload_id] = {
-        "percent": 15,
-        "status": "processing",
-        "message": "Preparing database..."
-    }
-
-    with engine.connect() as conn:
-        conn.execute(text("DROP INDEX IF EXISTS idx_cleaned_data_upload_id"))
-        conn.commit()
-
-    def csv_chunk_reader():
-        try:
-            return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="utf-8")
-        except UnicodeDecodeError:
-            return pd.read_csv(io.BytesIO(contents), chunksize=100_000, encoding="latin1")
-
-    if name.endswith(".csv"):
-        upload_progress_store[upload_id] = {
-            "percent": 18,
-            "status": "processing",
-            "message": "Counting rows..."
-        }
-        try:
-            row_count_df = pd.read_csv(
-                io.BytesIO(contents),
-                usecols=[0],
-                encoding="utf-8"
-            )
-        except UnicodeDecodeError:
-            row_count_df = pd.read_csv(
-                io.BytesIO(contents),
-                usecols=[0],
-                encoding="latin1"
-            )
-        estimated_total = len(row_count_df)
-        del row_count_df
-
-        reader = csv_chunk_reader()
-        rows_processed = 0
-
-        for chunk in reader:
-            total_records += len(chunk)
-            chunk = normalize_dataframe(chunk)
-            chunk = chunk.drop_duplicates()
-            chunk["__hash"] = pd.util.hash_pandas_object(chunk, index=False).astype(str)
-            chunk = chunk[~chunk["__hash"].isin(seen_hashes)]
-            seen_hashes.update(chunk["__hash"])
-            chunk = chunk.drop(columns=["__hash"])
-            copy_cleaned_data(engine, upload_id, chunk)
-
-            rows_processed += len(chunk)
-
-            if estimated_total > 0:
-                ingest_pct = rows_processed / estimated_total
-                percent = int(20 + ingest_pct * 65)
-                percent = min(percent, 85)
-            else:
-                percent = 50
-
-            upload_progress_store[upload_id] = {
-                "percent": percent,
-                "status": "processing",
-                "message": f"Processing {rows_processed:,} / {estimated_total:,} rows..."
-            }
-
-    elif name.endswith(".xls") or name.endswith(".xlsx"):
-        upload_progress_store[upload_id] = {
-            "percent": 20,
-            "status": "processing",
-            "message": "Loading Excel file..."
-        }
-
-        try:
-            df = pd.read_excel(io.BytesIO(contents), engine="calamine")
-        except Exception:
-            df = pd.read_excel(io.BytesIO(contents))
-        total_records = len(df)
-
-        upload_progress_store[upload_id] = {
-            "percent": 40,
-            "status": "processing",
-            "message": f"Normalizing {total_records:,} rows..."
-        }
-
-        df = normalize_dataframe(df)
-
-        upload_progress_store[upload_id] = {
-            "percent": 60,
-            "status": "processing",
-            "message": "Removing duplicates..."
-        }
-
-        df = df.drop_duplicates()
-        df["__hash"] = df.astype(str).agg("|".join, axis=1)
-        df = df.drop_duplicates(subset="__hash")
-        duplicate_records = total_records - len(df)
-        df = df.drop(columns=["__hash"])
-
-        upload_progress_store[upload_id] = {
-            "percent": 75,
-            "status": "processing",
-            "message": "Saving to database..."
-        }
-
-        copy_cleaned_data(engine, upload_id, df)
-
-    else:
-        upload_progress_store.pop(upload_id, None)
-        raise HTTPException(status_code=400, detail="Unsupported file")
-
-    if name.endswith(".csv"):
-        duplicate_records = total_records - len(seen_hashes)
-
-    upload_progress_store[upload_id] = {
-        "percent": 88,
-        "status": "processing",
-        "message": "Rebuilding index..."
-    }
-
-    with engine.connect() as conn:
-        conn.execute(text("""
-            CREATE INDEX idx_cleaned_data_upload_id ON cleaned_data(upload_id)
-        """))
-        conn.commit()
-
-    upload_progress_store[upload_id] = {
-        "percent": 95,
-        "status": "processing",
-        "message": "Saving upload record..."
-    }
+    # ── Save raw file to disk for background processing ──
+    queue_dir = os.path.join(tempfile.gettempdir(), "datavault_queue")
+    os.makedirs(queue_dir, exist_ok=True)
+    queued_file_path = os.path.join(queue_dir, f"{upload_id}.data")
+    with open(queued_file_path, 'wb') as f:
+        f.write(contents)
 
     final_headers = {'columns': [str(c) for c in preview_df.columns]}
 
+    # ── Insert upload_log immediately with processing_status = 'processing' ──
     with engine.connect() as conn:
         conn.execute(
             text("""
@@ -503,17 +453,14 @@ async def upload_file(
                  total_records, duplicate_records,
                  failed_records, status, created_by_user_id,
                  header_status, original_headers, final_headers,
-                 header_resolution_type)
+                 header_resolution_type, processing_status)
                 VALUES
-                (:uid, :cid, :f, :t, :d, 0, 'SUCCESS', :user_id,
-                 'no_issue', :orig, :final, 'original')
+                (:uid, :cid, :f, 0, 0, 0, 'PROCESSING', :user_id,
+                 'no_issue', :orig, :final, 'original', 'processing')
             """),
             {
-                "uid": upload_id,
-                "cid": category_id,
-                "f": file.filename,
-                "t": total_records,
-                "d": duplicate_records,
+                "uid": upload_id, "cid": category_id,
+                "f": original_filename,
                 "user_id": user["id"],
                 "orig": json.dumps(original_headers),
                 "final": json.dumps(final_headers)
@@ -521,20 +468,85 @@ async def upload_file(
         )
         conn.commit()
 
-    log_to_csv(file.filename, total_records, duplicate_records, 0, "SUCCESS")
+    # ── Fire background task — does NOT block response ──
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        executor,
+        _process_file_background,
+        upload_id, queued_file_path, original_filename
+    )
 
-    upload_progress_store[upload_id] = {
-        "percent": 100,
-        "status": "done",
-        "message": f"Done! {total_records:,} records processed."
-    }
-
+    # ── Return immediately — user sees file in list right away ──
     return {
         "success": True,
         "upload_id": upload_id,
-        "total_records": total_records,
-        "duplicate_records": duplicate_records
+        "status": "processing",
+        "message": "File queued for processing"
     }
+
+def _process_file_background(upload_id: int, queued_file_path: str,
+                              original_filename: str):
+    """
+    Runs in thread pool after upload returns.
+    Reads queued file, processes it, updates upload_log when done.
+    """
+    try:
+        with open(queued_file_path, 'rb') as f:
+            contents = f.read()
+
+        name = original_filename.lower()
+
+        total_records, duplicate_records = _process_file_sync(
+            contents, name, upload_id
+        )
+
+        # ── Update upload_log with final counts and mark ready ──
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    UPDATE upload_log
+                    SET total_records = :t,
+                        duplicate_records = :d,
+                        status = 'SUCCESS',
+                        processing_status = 'ready'
+                    WHERE upload_id = :uid
+                """),
+                {
+                    "t": total_records,
+                    "d": duplicate_records,
+                    "uid": upload_id
+                }
+            )
+            conn.commit()
+
+        log_to_csv(original_filename, total_records, duplicate_records, 0, "SUCCESS")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        # Mark as failed so frontend can show error state
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        UPDATE upload_log
+                        SET status = 'FAILED',
+                            processing_status = 'failed'
+                        WHERE upload_id = :uid
+                    """),
+                    {"uid": upload_id}
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+    finally:
+        # Always clean up the queued file
+        try:
+            os.remove(queued_file_path)
+        except Exception:
+            pass
 
 @app.get("/upload/{upload_id}/headers")
 def get_upload_headers(
@@ -805,6 +817,7 @@ def list_uploads(
                 SELECT u.upload_id, u.filename,
                        u.total_records, u.duplicate_records,
                        u.failed_records, u.status,
+                       u.processing_status,
                        u.uploaded_at,
                        u.created_by_user_id,
                        usr.email AS uploaded_by,
@@ -820,21 +833,50 @@ def list_uploads(
         ).fetchall()
 
     return [
-        {
-            "upload_id": r.upload_id,
-            "filename": r.filename,
-            "total_records": r.total_records,
-            "duplicate_records": r.duplicate_records,
-            "failed_records": r.failed_records,
-            "status": r.status,
-            "uploaded_at": str(r.uploaded_at),
-            "category": r.category,
-            "category_id": r.category_id,
-            "created_by_user_id": r.created_by_user_id,
-            "uploaded_by": r.uploaded_by
-        }
-        for r in rows
-    ]
+            {
+                "upload_id": r.upload_id,
+                "filename": r.filename,
+                "total_records": r.total_records,
+                "duplicate_records": r.duplicate_records,
+                "failed_records": r.failed_records,
+                "status": r.status,
+                "processing_status": r.processing_status,
+                "uploaded_at": str(r.uploaded_at),
+                "category": r.category,
+                "category_id": r.category_id,
+                "created_by_user_id": r.created_by_user_id,
+                "uploaded_by": r.uploaded_by
+            }
+            for r in rows
+        ]
+
+@app.get("/upload/{upload_id}/status")
+def get_upload_status(
+    upload_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """Lightweight endpoint frontend polls to check processing status."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT processing_status, total_records, 
+                       duplicate_records, status
+                FROM upload_log
+                WHERE upload_id = :uid
+            """),
+            {"uid": upload_id}
+        ).fetchone()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    return {
+        "upload_id": upload_id,
+        "processing_status": result.processing_status,
+        "total_records": result.total_records,
+        "duplicate_records": result.duplicate_records,
+        "status": result.status
+    }
 
 @app.post("/admin/cleanup-temp-uploads")
 def cleanup_abandoned_uploads(user: dict = Depends(admin_only)):
@@ -1222,32 +1264,26 @@ def export_data(
 
 # ---------------- DELETE ----------------
 @app.delete("/upload/{upload_id}")
-def delete_upload(
-    upload_id: int,
-    user: dict = Depends(get_current_user)
-):
+def delete_upload(upload_id: int, user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # Ownership check
         owner = conn.execute(
-            text("""
-                SELECT created_by_user_id
-                FROM upload_log
-                WHERE upload_id=:uid
-            """),
+            text("SELECT created_by_user_id FROM upload_log WHERE upload_id = :uid"),
             {"uid": upload_id}
         ).scalar()
 
         if owner is None:
-            raise HTTPException(status_code=404)
+            raise HTTPException(status_code=404, detail="Upload not found")
 
         if not can_delete_upload(user, owner):
-            raise HTTPException(status_code=403, detail="Not allowed")
+            raise HTTPException(status_code=403, detail="Not authorized")
 
         conn.execute(
-            text("DELETE FROM cleaned_data WHERE upload_id=:uid"),
+            text("DELETE FROM cleaned_data WHERE upload_id = :uid"),
             {"uid": upload_id}
         )
         conn.execute(
-            text("DELETE FROM upload_log WHERE upload_id=:uid"),
+            text("DELETE FROM upload_log WHERE upload_id = :uid"),
             {"uid": upload_id}
         )
 
@@ -1954,3 +1990,7 @@ def get_header_metadata(
             "first_row_was_data": result.first_row_is_data,
             "header_status": result.header_status
         }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)

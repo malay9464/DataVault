@@ -1399,3 +1399,38 @@ th:first-child {
 .cat-pill.active .pill-count {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* ---------- PROCESSING BADGES ---------- */
+.processing-badge {
+    color: #f59e0b;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.failed-badge {
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.status-processing {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-processing::before {
+    content: "●";
+    color: #f59e0b;
+}
