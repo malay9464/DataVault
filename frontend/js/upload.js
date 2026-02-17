@@ -104,7 +104,7 @@ document.head.appendChild(style);
 // ─── UPLOAD READINESS ─────────────────────────────────────────────────────────
 function checkUploadReady() {
     const btn = document.getElementById("uploadBtn");
-    btn.disabled = !(selectedFile && categorySelect.value);
+    if (btn) btn.disabled = !(selectedFile && categorySelect && categorySelect.value);
 }
 
 fileInput.onchange = () => {
@@ -129,30 +129,32 @@ fileInput.onchange = () => {
     checkUploadReady();
 };
 
-categorySelect.addEventListener("change", checkUploadReady);
+if (categorySelect) categorySelect.addEventListener("change", checkUploadReady);
 
-uploadBox.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    uploadBox.style.borderColor = "#16a34a";
-    uploadBox.style.background = "#f0fdf4";
-    uploadBox.style.transform = "scale(1.02)";
-});
-uploadBox.addEventListener("dragleave", () => {
-    uploadBox.style.borderColor = "";
-    uploadBox.style.background = "";
-    uploadBox.style.transform = "";
-});
-uploadBox.addEventListener("drop", (e) => {
-    e.preventDefault();
-    uploadBox.style.borderColor = "";
-    uploadBox.style.background = "";
-    uploadBox.style.transform = "";
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        fileInput.files = files;
-        fileInput.dispatchEvent(new Event("change"));
-    }
-});
+if (uploadBox) {
+    uploadBox.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadBox.style.borderColor = "#16a34a";
+        uploadBox.style.background = "#f0fdf4";
+        uploadBox.style.transform = "scale(1.02)";
+    });
+    uploadBox.addEventListener("dragleave", () => {
+        uploadBox.style.borderColor = "";
+        uploadBox.style.background = "";
+        uploadBox.style.transform = "";
+    });
+    uploadBox.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadBox.style.borderColor = "";
+        uploadBox.style.background = "";
+        uploadBox.style.transform = "";
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            fileInput.files = files;
+            fileInput.dispatchEvent(new Event("change"));
+        }
+    });
+}
 
 // ─── SEARCH PARAMS ────────────────────────────────────────────────────────────
 function buildSearchParams() {
@@ -167,11 +169,42 @@ function buildSearchParams() {
     return p.toString();
 }
 
-let searchTimeout;
-searchInput.addEventListener("input", () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => { page = 1; loadUploads(); }, 300);
-});
+if (searchInput) {
+    let searchTimeout;
+    searchInput.addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => { page = 1; loadUploads(); }, 300);
+    });
+}
+
+// ─── PANEL SWAP ───────────────────────────────────────────────────────────────
+function showPanel(panel) {
+    const filesPanel     = document.getElementById("filesPanel");
+    const dashboardPanel = document.getElementById("dashboardPanel");
+    const dashBtn        = document.getElementById("dashboardBtn");
+
+    if (panel === "dashboard") {
+        if (filesPanel)     filesPanel.style.display     = "none";
+        if (dashboardPanel) dashboardPanel.style.display = "block";
+
+        // Highlight Dashboard, clear others
+        document.querySelectorAll(".sidebar .category").forEach(c => c.classList.remove("active"));
+        if (dashBtn) dashBtn.classList.add("active");
+
+        history.pushState({}, "", "/?view=dashboard");
+
+        // Load data — always reload so Refresh works correctly
+        if (typeof loadDashboard === "function") loadDashboard();
+
+    } else {
+        if (filesPanel)     filesPanel.style.display     = "block";
+        if (dashboardPanel) dashboardPanel.style.display = "none";
+
+        if (dashBtn) dashBtn.classList.remove("active");
+
+        history.pushState({}, "", "/");
+    }
+}
 
 // ─── CATEGORIES ───────────────────────────────────────────────────────────────
 async function addCategoryPrompt() {
@@ -188,10 +221,12 @@ async function loadCategories() {
     const cats = await res.json();
     categoriesCache = cats;
 
-    categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
-    cats.forEach(c => {
-        categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-    });
+    if (categorySelect) {
+        categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
+        cats.forEach(c => {
+            categorySelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+        });
+    }
 
     if (currentUser && currentUser.role !== "admin") {
         categoryList.innerHTML = "";
@@ -222,8 +257,8 @@ async function loadCategories() {
             categoryList.appendChild(div);
         });
 
-        allCountSpan.innerText = allCount;
-        uncatCountSpan.innerText = uncatCount;
+        if (allCountSpan) allCountSpan.innerText = allCount;
+        if (uncatCountSpan) uncatCountSpan.innerText = uncatCount;
     }
 
     checkUploadReady();
@@ -238,7 +273,7 @@ async function loadAdminUserList() {
 
     let totalUploads = 0;
     users.forEach(u => totalUploads += u.upload_count);
-    allCountSpan.innerText = totalUploads;
+    if (allCountSpan) allCountSpan.innerText = totalUploads;
 
     if (users.length === 0) {
         categoryList.innerHTML = `<div style="padding:12px;color:#94a3b8;font-size:13px;">No users found</div>`;
@@ -315,6 +350,7 @@ function filterByUser(userId, el) {
     removeUserCategoryBar();
     document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
     el.classList.add("active");
+    showPanel("files");
     loadUserCategories(userId);
     loadUploads();
 }
@@ -332,22 +368,23 @@ function applyFilter(type, el) {
     clearSelection();
     removeUserCategoryBar();
     updateURL();
-    searchInput.value = "";
+    if (searchInput) searchInput.value = "";
     document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
-    el.classList.add("active");
+    if (el) el.classList.add("active");
+    showPanel("files");
     loadUploads();
 }
 
 function applyAdvancedSearch() { page = 1; loadUploads(); }
 
 function resetSearch() {
-    searchInput.value = "";
-    totalMin.value = "";
-    totalMax.value = "";
-    dupMin.value = "";
-    dupMax.value = "";
-    dateFrom.value = "";
-    dateTo.value = "";
+    if (searchInput) searchInput.value = "";
+    if (totalMin) totalMin.value = "";
+    if (totalMax) totalMax.value = "";
+    if (dupMin) dupMin.value = "";
+    if (dupMax) dupMax.value = "";
+    if (dateFrom) dateFrom.value = "";
+    if (dateTo) dateTo.value = "";
     page = 1;
     loadUploads();
 }
@@ -419,15 +456,12 @@ async function upload() {
             return;
         }
         if (result.success) {
-            // File queued — return immediately, processing happens in background
             showToast("File uploaded! Processing in background... ⏳", "success");
             uploadProgress.style.display = "none";
             progressFill.style.width = "0%";
             clearUploadFields();
             loadCategories();
             loadUploads();
-
-            // Poll for processing completion
             if (result.status === "processing") {
                 pollUploadStatus(result.upload_id);
             }
@@ -446,47 +480,27 @@ async function upload() {
 }
 
 function pollUploadStatus(uploadId) {
-    const maxAttempts = 120; // 10 minutes max (120 × 5s)
+    const maxAttempts = 120;
     let attempts = 0;
-
     const interval = setInterval(async () => {
         attempts++;
-        if (attempts > maxAttempts) {
-            clearInterval(interval);
-            return;
-        }
-
+        if (attempts > maxAttempts) { clearInterval(interval); return; }
         try {
             const res = await authFetch(`/upload/${uploadId}/status`);
-            if (!res.ok) {
-                clearInterval(interval);
-                return;
-            }
-
+            if (!res.ok) { clearInterval(interval); return; }
             const data = await res.json();
-
             if (data.processing_status === "ready") {
                 clearInterval(interval);
-                showToast(
-                    `✅ Processing complete! ${data.total_records?.toLocaleString()} records ready.`,
-                    "success",
-                    4000
-                );
-                loadUploads(); // Refresh file list with final counts
+                showToast(`✅ Processing complete! ${data.total_records?.toLocaleString()} records ready.`, "success", 4000);
+                loadUploads();
                 loadCategories();
-
             } else if (data.processing_status === "failed") {
                 clearInterval(interval);
                 showToast("❌ File processing failed. Please try again.", "error", 5000);
                 loadUploads();
             }
-            // if still 'processing', do nothing and wait for next poll
-
-        } catch (err) {
-            clearInterval(interval);
-        }
-
-    }, 5000); // poll every 5 seconds
+        } catch (err) { clearInterval(interval); }
+    }, 5000);
 }
 
 function clearUploadFields() {
@@ -558,6 +572,7 @@ async function createUser() {
     }
     closeAddUserModal();
     showToast("User added successfully ✓", "success");
+    if (currentUser && currentUser.role === "admin") loadAdminUserList();
 }
 
 // ─── LOAD USER ────────────────────────────────────────────────────────────────
@@ -567,26 +582,34 @@ async function loadUser() {
     currentUser = await res.json();
 
     const newCategoryBtn = document.getElementById("newCategoryBtn");
-    const addUserBtn = document.getElementById("addUserBtn");
+    const addUserBtn     = document.getElementById("addUserBtn");
     const manageUsersBtn = document.getElementById("manageUsersBtn");
-    const uploadSection = document.querySelector(".upload-section");
-    const divider = document.querySelector(".divider");
+    const uploadSection  = document.querySelector(".upload-section");
+    const divider        = document.querySelector(".divider");
+    const dashBtn        = document.getElementById("dashboardBtn");
+    const label          = document.getElementById("sidebarSectionLabel");
 
     if (currentUser.role === "admin") {
-        const label = document.getElementById("sidebarSectionLabel");
-        if (label) label.textContent = "Users";
+        if (label)          label.textContent          = "Users";
         if (newCategoryBtn) newCategoryBtn.style.display = "none";
-        if (addUserBtn) addUserBtn.style.display = "flex";
+        if (addUserBtn)     addUserBtn.style.display     = "flex";
         if (manageUsersBtn) manageUsersBtn.style.display = "flex";
-        if (uploadSection) uploadSection.style.display = "none";
-        if (divider) divider.style.display = "none";
+        if (uploadSection)  uploadSection.style.display  = "none";
+        if (divider)        divider.style.display        = "none";
+        if (dashBtn)        dashBtn.style.display        = "flex";
+
         document.querySelectorAll(".cat-actions").forEach(a => a.style.display = "none");
+
+        // ── Show dashboard panel if URL says ?view=dashboard ──────────────
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("view") === "dashboard") {
+            showPanel("dashboard");
+        }
+
     } else {
-        if (newCategoryBtn) newCategoryBtn.style.display = "flex";
-        if (addUserBtn) addUserBtn.style.display = "none";
-        if (manageUsersBtn) manageUsersBtn.style.display = "none";
-        if (uploadSection) uploadSection.style.display = "block";
-        if (divider) divider.style.display = "block";
+        if (dashBtn)        dashBtn.style.display        = "none";
+        if (addUserBtn)     addUserBtn.style.display      = "none";
+        if (manageUsersBtn) manageUsersBtn.style.display  = "none";
     }
 }
 
@@ -632,7 +655,6 @@ async function loadUploads(showSkeleton = false) {
         filteredUploads = [...allUploads];
         tableSkeleton.style.display = "none";
 
-        // Clear selections when data reloads
         clearSelection();
 
         if (filteredUploads.length === 0) {
@@ -707,43 +729,28 @@ function renderTable() {
         const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
         const canMove = currentUser.role !== "admin";
 
-        // Total records cell
-        let totalCell = '';
-        if (isProcessing) {
-            totalCell = '<span class="processing-badge">⏳ Processing...</span>';
-        } else if (isFailed) {
-            totalCell = '<span class="failed-badge">❌ Failed</span>';
-        } else {
-            totalCell = r.total_records?.toLocaleString() ?? '—';
-        }
+        let totalCell = isProcessing
+            ? '<span class="processing-badge">⏳ Processing...</span>'
+            : isFailed
+                ? '<span class="failed-badge">❌ Failed</span>'
+                : r.total_records?.toLocaleString() ?? '—';
 
-        // Duplicates cell
         const dupCell = isProcessing ? '—' : (r.duplicate_records?.toLocaleString() ?? '—');
 
-        // View button
-        let viewBtn = '';
-        if (isProcessing) {
-            viewBtn = `<button class="btn-view disabled" disabled title="File is still processing...">⏳ Processing</button>`;
-        } else {
-            viewBtn = `<button class="btn-view" onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">View</button>`;
-        }
+        let viewBtn = isProcessing
+            ? `<button class="btn-view disabled" disabled title="File is still processing...">⏳ Processing</button>`
+            : `<button class="btn-view" onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">View</button>`;
 
-        // Move button
-        let moveBtn = '';
-        if (canMove && !isProcessing) {
-            moveBtn = `<button class="btn-move" onclick="openMoveModal(${r.upload_id}, ${r.category_id}, '${r.filename.replace(/'/g, "\\'")}')">Move</button>`;
-        }
+        let moveBtn = (canMove && !isProcessing)
+            ? `<button class="btn-move" onclick="openMoveModal(${r.upload_id}, ${r.category_id}, '${r.filename.replace(/'/g, "\\'")}')">Move</button>`
+            : '';
 
-        // Delete button
         const deleteBtn = `<button class="btn-delete ${canDelete ? '' : 'disabled'}"
-            ${canDelete ? `onclick="del(${r.upload_id})"` : 'disabled'}>
-            Delete
-        </button>`;
+            ${canDelete ? `onclick="del(${r.upload_id})"` : 'disabled'}>Delete</button>`;
 
-        // Admin column
         const adminCol = currentUser.role === "admin" ? `<td>${r.uploaded_by}</td>` : '';
 
-        let row = `<tr id="row-${r.upload_id}" class="${isChecked ? 'row-selected' : ''}">
+        uploadTable.innerHTML += `<tr id="row-${r.upload_id}" class="${isChecked ? 'row-selected' : ''}">
             <td style="text-align:center;">
                 <input type="checkbox" class="row-checkbox"
                     data-id="${r.upload_id}"
@@ -752,27 +759,14 @@ function renderTable() {
                     onchange="toggleRowSelect(this, ${r.upload_id})"
                     style="cursor:pointer; width:16px; height:16px;">
             </td>
-            <td>
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:18px;">📄</span>
-                    <strong>${r.filename}</strong>
-                </div>
-            </td>
+            <td><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">📄</span><strong>${r.filename}</strong></div></td>
             <td>${r.category}</td>
             <td>${totalCell}</td>
             <td>${dupCell}</td>
             ${adminCol}
             <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
-            <td>
-                <div class="action-group">
-                    ${viewBtn}
-                    ${moveBtn}
-                    ${deleteBtn}
-                </div>
-            </td>
+            <td><div class="action-group">${viewBtn}${moveBtn}${deleteBtn}</div></td>
         </tr>`;
-
-        uploadTable.innerHTML += row;
     });
 
     uploadTable.innerHTML += `</tbody>`;
@@ -784,45 +778,31 @@ function renderTable() {
 function toggleSelectAll(checkbox) {
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
-
     data.forEach(r => {
         const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
         if (!canDelete) return;
-        if (checkbox.checked) {
-            selectedUploadIds.add(r.upload_id);
-        } else {
-            selectedUploadIds.delete(r.upload_id);
-        }
+        if (checkbox.checked) selectedUploadIds.add(r.upload_id);
+        else selectedUploadIds.delete(r.upload_id);
     });
-
-    // Update row checkboxes visually
     document.querySelectorAll(".row-checkbox").forEach(cb => {
         const id = parseInt(cb.dataset.id);
         cb.checked = selectedUploadIds.has(id);
         const row = document.getElementById(`row-${id}`);
         if (row) row.classList.toggle("row-selected", cb.checked);
     });
-
     updateBulkBar();
 }
 
 function toggleRowSelect(checkbox, uploadId) {
-    if (checkbox.checked) {
-        selectedUploadIds.add(uploadId);
-    } else {
-        selectedUploadIds.delete(uploadId);
-    }
+    if (checkbox.checked) selectedUploadIds.add(uploadId);
+    else selectedUploadIds.delete(uploadId);
     const row = document.getElementById(`row-${uploadId}`);
     if (row) row.classList.toggle("row-selected", checkbox.checked);
-
-    // Update "select all" checkbox state
     const start = (page - 1) * PAGE_SIZE;
     const data = filteredUploads.slice(start, start + PAGE_SIZE);
-    const pageIds = data.map(r => r.upload_id);
-    const allSelected = pageIds.every(id => selectedUploadIds.has(id));
+    const allSelected = data.map(r => r.upload_id).every(id => selectedUploadIds.has(id));
     const selectAll = document.getElementById("selectAllCheckbox");
     if (selectAll) selectAll.checked = allSelected;
-
     updateBulkBar();
 }
 
@@ -841,7 +821,6 @@ function updateBulkBar() {
 function clearSelection() {
     selectedUploadIds.clear();
     updateBulkBar();
-    // Uncheck all visible checkboxes
     document.querySelectorAll(".row-checkbox").forEach(cb => { cb.checked = false; });
     const selectAll = document.getElementById("selectAllCheckbox");
     if (selectAll) selectAll.checked = false;
@@ -852,18 +831,12 @@ function clearSelection() {
 async function bulkDelete() {
     const ids = Array.from(selectedUploadIds);
     if (ids.length === 0) return;
-
-    const confirmed = confirm(
-        `Delete ${ids.length} file${ids.length !== 1 ? "s" : ""}? This action cannot be undone.`
-    );
-    if (!confirmed) return;
-
+    if (!confirm(`Delete ${ids.length} file${ids.length !== 1 ? "s" : ""}? This action cannot be undone.`)) return;
     const res = await authFetch("/uploads/bulk", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_ids: ids })
     });
-
     if (res.ok) {
         const result = await res.json();
         showToast(`${result.deleted_count} file${result.deleted_count !== 1 ? "s" : ""} deleted successfully`, "success");
@@ -880,17 +853,13 @@ async function bulkDelete() {
 function openMoveModal(uploadId, currentCategoryId, filename) {
     moveTargetUploadId = uploadId;
     moveTargetCurrentCategoryId = currentCategoryId;
-
     document.getElementById("moveFileName").textContent = filename;
-
     const select = document.getElementById("moveCategorySelect");
     select.innerHTML = `<option value="" disabled selected>— Choose category —</option>`;
-
     categoriesCache.forEach(c => {
-        if (c.id === currentCategoryId) return; // exclude current category
+        if (c.id === currentCategoryId) return;
         select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
     });
-
     document.getElementById("moveModal").style.display = "flex";
 }
 
@@ -902,20 +871,13 @@ function closeMoveModal() {
 
 async function confirmMove() {
     const categoryId = parseInt(document.getElementById("moveCategorySelect").value);
-
-    if (!categoryId) {
-        showToast("Please select a destination category", "warn");
-        return;
-    }
-
+    if (!categoryId) { showToast("Please select a destination category", "warn"); return; }
     const res = await authFetch(`/upload/${moveTargetUploadId}/move`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category_id: categoryId })
     });
-
     closeMoveModal();
-
     if (res.ok) {
         const destCat = categoriesCache.find(c => c.id === categoryId);
         showToast(`File moved to "${destCat?.name || "category"}" ✓`, "success");
@@ -931,13 +893,11 @@ async function confirmMove() {
 function renderPagination(totalPages) {
     pagination.innerHTML = "";
     if (totalPages <= 1) return;
-
     const prev = document.createElement("button");
     prev.innerText = "Previous";
     prev.disabled = page === 1;
     prev.onclick = () => { page--; updateURL(); renderTable(); window.scrollTo({ top: 0, behavior: "smooth" }); };
     pagination.appendChild(prev);
-
     let start = Math.max(1, page - 2);
     let end = Math.min(totalPages, page + 2);
     if (start > 1) addPage(1);
@@ -945,7 +905,6 @@ function renderPagination(totalPages) {
     for (let i = start; i <= end; i++) addPage(i);
     if (end < totalPages - 1) pagination.append(document.createTextNode("..."));
     if (end < totalPages) addPage(totalPages);
-
     const next = document.createElement("button");
     next.innerText = "Next";
     next.disabled = page === totalPages;
@@ -1011,17 +970,20 @@ function updateURL() {
 }
 
 function resumePollingForProcessingFiles() {
-    // On page load, find any files still processing and resume polling
-    const processing = allUploads.filter(
-        r => r.processing_status === 'processing'
-    );
-    processing.forEach(r => {
-        pollUploadStatus(r.upload_id);
-    });
+    const processing = allUploads.filter(r => r.processing_status === 'processing');
+    processing.forEach(r => pollUploadStatus(r.upload_id));
 }
 
+// ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initPage() {
     await loadUser();
+
+    // Wire Dashboard sidebar button
+    const dashBtn = document.getElementById("dashboardBtn");
+    if (dashBtn) {
+        dashBtn.onclick = () => showPanel("dashboard");
+    }
+
     await loadCategories();
     if (currentUser && currentUser.role === "admin") await loadAdminUserList();
     await loadUploads(true);

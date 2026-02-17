@@ -962,6 +962,179 @@ def preview_data(
         "total_records": total
     }
 
+@app.get("/admin/dashboard-stats")
+def dashboard_stats(
+    days: int = Query(30),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+
+        # ── USERS ──────────────────────────────────────────────────────────
+        user_stats = conn.execute(text("""
+            SELECT
+                COUNT(*)                                    AS total,
+                COUNT(*) FILTER (WHERE is_active = true)   AS active,
+                COUNT(*) FILTER (WHERE is_active = false)  AS disabled
+            FROM users
+        """)).fetchone()
+
+        # ── FILES ──────────────────────────────────────────────────────────
+        file_stats = conn.execute(text("""
+            SELECT
+                COUNT(*)                                                        AS total,
+                COALESCE(SUM(total_records), 0)                                 AS total_records,
+                COALESCE(AVG(total_records), 0)                                 AS avg_per_file,
+                COUNT(*) FILTER (WHERE processing_status = 'processing')        AS processing,
+                COUNT(*) FILTER (WHERE processing_status = 'failed'
+                                    OR status = 'FAILED')                       AS failed
+            FROM upload_log
+        """)).fetchone()
+
+        # ── STORAGE HEALTH — orphaned rows ─────────────────────────────────
+        orphan_count = conn.execute(text("""
+            SELECT COUNT(*)
+            FROM cleaned_data cd
+            LEFT JOIN upload_log ul ON ul.upload_id = cd.upload_id
+            WHERE ul.upload_id IS NULL
+        """)).scalar()
+
+        # ── ACTIVITY OVER TIME ─────────────────────────────────────────────
+        activity = conn.execute(text("""
+            SELECT
+                uploaded_at::date                   AS date,
+                COUNT(*)                            AS files,
+                COALESCE(SUM(total_records), 0)     AS records
+            FROM upload_log
+            WHERE uploaded_at >= NOW() - INTERVAL '1 day' * :days
+            GROUP BY uploaded_at::date
+            ORDER BY uploaded_at::date
+        """), {"days": days}).fetchall()
+
+        # ── USER BREAKDOWN ─────────────────────────────────────────────────
+        user_breakdown = conn.execute(text("""
+            SELECT
+                u.email,
+                COUNT(ul.upload_id)                                 AS files,
+                COALESCE(SUM(ul.total_records), 0)                  AS records,
+                COALESCE(SUM(ul.duplicate_records), 0)              AS duplicates,
+                CASE
+                    WHEN SUM(ul.total_records) > 0
+                    THEN (SUM(ul.duplicate_records)::float
+                          / SUM(ul.total_records) * 100)
+                    ELSE 0
+                END                                                 AS avg_dup_rate
+            FROM users u
+            LEFT JOIN upload_log ul ON ul.created_by_user_id = u.id
+            WHERE u.role != 'admin'
+            GROUP BY u.id, u.email
+            ORDER BY files DESC
+        """)).fetchall()
+
+        # ── FILE TYPES ─────────────────────────────────────────────────────
+        file_types = conn.execute(text("""
+            SELECT
+                LOWER(SUBSTRING(filename FROM '\.([^.]+)$')) AS ext,
+                COUNT(*)                                      AS count
+            FROM upload_log
+            GROUP BY ext
+            ORDER BY count DESC
+        """)).fetchall()
+
+        # ── PROCESSING STATUS ──────────────────────────────────────────────
+        proc_status = conn.execute(text("""
+            SELECT
+                COALESCE(processing_status, 'ready') AS status,
+                COUNT(*)                              AS count
+            FROM upload_log
+            GROUP BY processing_status
+            ORDER BY count DESC
+        """)).fetchall()
+
+        # ── RECENT ACTIVITY FEED ───────────────────────────────────────────
+        recent = conn.execute(text("""
+            SELECT
+                ul.upload_id,
+                ul.filename,
+                ul.total_records,
+                ul.duplicate_records,
+                ul.processing_status,
+                ul.status,
+                ul.uploaded_at,
+                u.email   AS uploaded_by,
+                c.name    AS category
+            FROM upload_log ul
+            JOIN users u      ON u.id  = ul.created_by_user_id
+            JOIN categories c ON c.id  = ul.category_id
+            ORDER BY ul.uploaded_at DESC
+            LIMIT 10
+        """)).fetchall()
+
+    return {
+        "users": {
+            "total":    user_stats.total,
+            "active":   user_stats.active,
+            "disabled": user_stats.disabled,
+            "breakdown": [
+                {
+                    "email":        r.email,
+                    "files":        r.files,
+                    "records":      r.records,
+                    "duplicates":   r.duplicates,
+                    "avg_dup_rate": round(float(r.avg_dup_rate), 2)
+                }
+                for r in user_breakdown
+            ]
+        },
+        "files": {
+            "total":      file_stats.total,
+            "processing": file_stats.processing,
+            "failed":     file_stats.failed
+        },
+        "records": {
+            "total":        file_stats.total_records,
+            "avg_per_file": float(file_stats.avg_per_file)
+        },
+        "health": {
+            "orphaned_rows": orphan_count
+        },
+        "activity": [
+            {
+                "date":    str(r.date),
+                "files":   r.files,
+                "records": r.records
+            }
+            for r in activity
+        ],
+        "file_types": [
+            {"ext": r.ext or "unknown", "count": r.count}
+            for r in file_types
+        ],
+        "processing_status": [
+            {"status": r.status, "count": r.count}
+            for r in proc_status
+        ],
+        "recent_activity": [
+            {
+                "upload_id":          r.upload_id,
+                "filename":           r.filename,
+                "total_records":      r.total_records,
+                "duplicate_records":  r.duplicate_records,
+                "processing_status":  r.processing_status,
+                "uploaded_at":        str(r.uploaded_at),
+                "uploaded_by":        r.uploaded_by,
+                "category":           r.category
+            }
+            for r in recent
+        ]
+    }
+
+@app.get("/dashboard.html")
+def serve_dashboard():
+    return FileResponse(os.path.join("..", "frontend", "dashboard.html"))
+
 @app.get("/search")
 def search_data(
     upload_id: int,
@@ -1681,6 +1854,23 @@ def related_search(
             }
             for r in rows
         ]
+    }
+
+@app.delete("/admin/cleanup-orphaned-rows")
+def cleanup_orphaned_rows(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    with engine.begin() as conn:
+        result = conn.execute(text("""
+            DELETE FROM cleaned_data
+            WHERE upload_id NOT IN (
+                SELECT upload_id FROM upload_log
+            )
+        """))
+    return {
+        "success": True,
+        "deleted_rows": result.rowcount
     }
 
 @app.get("/related-grouped")

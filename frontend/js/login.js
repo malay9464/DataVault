@@ -8,14 +8,12 @@ async function login() {
     }
 
     const form = new URLSearchParams();
-    form.append("username", email); // OAuth2 expects "username"
+    form.append("username", email);
     form.append("password", password);
 
     const res = await fetch("/login", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString()
     });
 
@@ -26,10 +24,19 @@ async function login() {
 
     const data = await res.json();
     localStorage.setItem("access_token", data.access_token);
-    window.location.href = "/";
+
+    // ── Role-based redirect ──────────────────────────────
+    // Decode JWT payload (no library needed)
+    const payload = JSON.parse(atob(data.access_token.split(".")[1]));
+
+    if (payload.role === "admin") {
+        window.location.href = "/?view=dashboard";   // ← Admin → dashboard panel
+    } else {
+        window.location.href = "/";                   // ← User → upload page
+    }
 }
 
 document.getElementById("loginForm").addEventListener("submit", function (e) {
-    e.preventDefault(); // stop page reload
+    e.preventDefault();
     login();
 });
