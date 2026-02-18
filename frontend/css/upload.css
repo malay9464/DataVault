@@ -170,6 +170,24 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ensure category name text itself truncates */
+.category > span:first-child::after {
+  content: attr(title);
+  display: none;
+}
+
+/* Fix category select dropdown - truncate long names */
+#categorySelect {
+  max-width: 320px;
+}
+
+#categorySelect option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1642,4 +1660,12 @@ td[data-full-number]:hover::before {
   border-top-color: #1e293b;
   z-index: 51;
   pointer-events: none;
+}
+
+/* Fix category select dropdown option text overflow */
+.select-wrapper select option {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
