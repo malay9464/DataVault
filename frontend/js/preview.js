@@ -232,6 +232,7 @@ async function loadData() {
 /* ---------- SMART DEFAULT WIDTHS ---------- */
 function getDefaultWidth(columnName) {
     const col = columnName.toLowerCase();
+    const headerMinWidth = Math.min(Math.max(columnName.length * 8, 100), 220);
     
     if (col.includes('email') || col.includes('mail')) return 180;
     if (col.includes('phone') || col.includes('mobile') || col.includes('contact')) return 100;
@@ -243,7 +244,7 @@ function getDefaultWidth(columnName) {
     if (col.includes('age') || col.includes('level')) return 80;
     if (col.includes('gender') || col.includes('active')) return 80;
     
-    return 150;
+    return headerMinWidth;
 }
 
 /* ---------- RENDER TABLE ---------- */
@@ -268,9 +269,9 @@ function renderTable(data) {
         
         html += `
             <th style="
-                    width: ${width}px;
-                    min-width: ${width}px;
-                    ${isLast ? '' : `max-width: ${width}px;`}"
+                width: ${width}px;
+                min-width: ${width}px;
+                max-width: ${width}px;"
                 data-column="${col}" 
                 data-index="${index}"
                 class="${isSorted ? 'sorted' : ''}">
@@ -308,7 +309,7 @@ function renderTable(data) {
         }
             html += `<td
                 class="${isLong ? 'has-long-text' : ''}"
-                style="${isLast ? '' : `width:${w}px; min-width:${w}px; max-width:${w}px;`}"
+                style="width:${w}px; min-width:${w}px; max-width:${w}px;"
                 title="${value}">${displayValue}</td>`;
         });
         html += "</tr>";
