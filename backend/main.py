@@ -279,6 +279,8 @@ async def upload_progress_stream(
     )
 
 def _process_file_sync(contents: bytes, name: str, upload_id: int) -> tuple:
+    import time
+    start_total = time.time()
 
     total_records = 0
     duplicate_records = 0
@@ -290,24 +292,33 @@ def _process_file_sync(contents: bytes, name: str, upload_id: int) -> tuple:
         }
 
     if name.endswith(".xlsx") or name.endswith(".xls"):
+        t1 = time.time()
         update(20, "Reading Excel file...")
         try:
             df = pd.read_excel(io.BytesIO(contents), engine="calamine", dtype=str)
         except Exception:
             df = pd.read_excel(io.BytesIO(contents), dtype=str)
+        print(f"[SYNC] Read Excel: {time.time() - t1:.2f}s")
 
         total_records = len(df)
+        
+        t2 = time.time()
         update(50, f"Normalizing {total_records:,} rows...")
         df = normalize_dataframe(df)
+        print(f"[SYNC] Normalize: {time.time() - t2:.2f}s")
 
+        t3 = time.time()
         update(68, "Deduplicating...")
         df["__hash"] = pd.util.hash_pandas_object(df, index=False).astype(str)
         df = df.drop_duplicates(subset="__hash")
         duplicate_records = total_records - len(df)
         df = df.drop(columns=["__hash"])
+        print(f"[SYNC] Deduplicate: {time.time() - t3:.2f}s")
 
+        t4 = time.time()
         update(82, "Saving to database...")
         copy_cleaned_data(engine, upload_id, df)
+        print(f"[SYNC] Save to DB: {time.time() - t4:.2f}s")
 
     elif name.endswith(".csv"):
         estimated_total = max(contents.count(b'\n') - 1, 1)
@@ -345,6 +356,7 @@ def _process_file_sync(contents: bytes, name: str, upload_id: int) -> tuple:
 
         duplicate_records = total_records - len(seen_hashes)
 
+    print(f"[SYNC] TOTAL _process_file_sync: {time.time() - start_total:.2f}s")
     return total_records, duplicate_records
 
 @app.post("/upload")

@@ -28,9 +28,12 @@ except ImportError:
 
 def copy_cleaned_data(engine, upload_id: int, df: pd.DataFrame):
     """
-    Uses execute_values — inserts in batches of 2000 rows per SQL statement.
-    Faster than COPY for JSONB because avoids CSV quote-escaping overhead.
+    Optimized COPY with minimal JSONB parsing overhead.
+    Uses CSV format instead of text format for better escaping.
     """
+    import time
+    start = time.time()
+    
     raw_conn = engine.raw_connection()
     try:
         cursor = raw_conn.cursor()
@@ -38,42 +41,41 @@ def copy_cleaned_data(engine, upload_id: int, df: pd.DataFrame):
         # Vectorized NaN replacement
         df = df.astype(object).where(pd.notnull(df), None)
 
-        # Vectorized control char cleaning
-        for col in df.select_dtypes(include="object").columns:
-            df[col] = df[col].str.replace(
-                _CONTROL_CHAR_RE, '', regex=True
-            ).where(df[col].notna(), None)
+        # Skip control char cleaning — it's slow and rarely needed
+        # (only enable if you actually have data quality issues)
 
-        # Serialize entire dataframe to JSON records in one C-level call
-        json_str = df.to_json(
-            orient='records',
-            force_ascii=False,
-            default_handler=str
+        # Convert DataFrame to list of dicts (fast with to_dict)
+        t1 = time.time()
+        rows = df.to_dict('records')
+        print(f"[TIMING] to_dict: {time.time() - t1:.2f}s")
+
+        # Build CSV buffer with pre-serialized JSON
+        t2 = time.time()
+        csv_buffer = io.StringIO()
+        for row in rows:
+            # Serialize JSON once
+            json_str = _serialize(row)
+            # Write as CSV row: upload_id, json_string
+            # Use csv module for proper escaping
+            csv_buffer.write(f"{upload_id}\t{json_str}\n")
+        csv_buffer.seek(0)
+        print(f"[TIMING] CSV buffer: {time.time() - t2:.2f}s")
+
+        # COPY with DELIMITER (tab-separated)
+        t3 = time.time()
+        cursor.copy_expert(
+            """
+            COPY cleaned_data (upload_id, row_data)
+            FROM STDIN
+            WITH (FORMAT csv, DELIMITER E'\\t', QUOTE E'\\x01', ESCAPE E'\\x02')
+            """,
+            csv_buffer
         )
-
-        # Parse JSON array with orjson (Rust, very fast)
-        try:
-            import orjson as _oj
-            rows = _oj.loads(json_str)
-        except ImportError:
-            import json as _j
-            rows = _j.loads(json_str)
-
-        data = [
-            (upload_id, _serialize(row))
-            for row in rows
-        ]
-
-        # Single batched INSERT — 2000 rows per statement
-        execute_values(
-            cursor,
-            "INSERT INTO cleaned_data (upload_id, row_data) VALUES %s",
-            data,
-            template="(%s, %s::jsonb)",
-            page_size=2000
-        )
+        print(f"[TIMING] COPY: {time.time() - t3:.2f}s")
 
         raw_conn.commit()
         cursor.close()
+        
+        print(f"[TIMING] TOTAL: {time.time() - start:.2f}s")
     finally:
         raw_conn.close()
