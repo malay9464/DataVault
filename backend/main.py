@@ -1680,6 +1680,39 @@ def serve_upload():
 def serve_preview():
     return FileResponse(os.path.join("..", "frontend", "preview.html"))
 
+@app.patch("/admin/users/{user_id}/toggle-status")
+def toggle_user_status(
+    user_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+
+    with engine.begin() as conn:
+        user = conn.execute(
+            text("SELECT id, is_active FROM users WHERE id = :uid"),
+            {"uid": user_id}
+        ).fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        new_status = not user.is_active
+
+        conn.execute(
+            text("UPDATE users SET is_active = :status WHERE id = :uid"),
+            {"status": new_status, "uid": user_id}
+        )
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "is_active": new_status
+    }
+
 @app.post("/admin/users")
 def create_user(
     email: str = Query(...),

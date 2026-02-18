@@ -48,6 +48,8 @@ const progressText = document.getElementById("progressText");
 const emptyState = document.getElementById("emptyState");
 const tableWrapper = document.getElementById("tableWrapper");
 const tableSkeleton = document.getElementById("tableSkeleton");
+const userFilterId = urlParams.get("user_filter");
+const userFilterEmail = urlParams.get("user_email");
 
 // ─── AUTH FETCH ───────────────────────────────────────────────────────────────
 async function authFetch(url, options = {}) {
@@ -426,16 +428,19 @@ async function loadUserCategories(userId) {
             <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Sort by</span>
             <div style="position:relative;flex:1;">
                 <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
-                    style="width:20%;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-                           background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
-                           appearance:none;outline:none;">
+                    style="width:100%;max-width:400px;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+                        background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
+                        appearance:none;outline:none;">
                     <option value="">All Categories</option>
-                    ${cats.map(c => `<option value="${c.id}">${c.name} (${c.uploads})</option>`).join("")}
+                    ${cats.map(c => {
+                        const displayName = c.name.length > 45 ? c.name.substring(0, 43) + '…' : c.name;
+                        return `<option value="${c.id}" title="${c.name}">${displayName} (${c.uploads})</option>`;
+                    }).join("")}
                 </select>
             </div>
         </div>`;
 
-    const searchContainer = document.querySelector(".search-container");
+        const searchContainer = document.querySelector(".search-container");
     if (searchContainer) searchContainer.parentNode.insertBefore(wrapper, searchContainer);
 }
 
@@ -1352,16 +1357,69 @@ async function savePassword() {
     }
 }
 
+function showUserFilterBanner(userLabel) {
+    const uploadsSection = document.querySelector(".uploads-section");
+    if (!uploadsSection || document.getElementById("userFilterBanner")) return;
+
+    const banner = document.createElement("div");
+    banner.id = "userFilterBanner";
+    banner.style.cssText = `
+        display:flex; align-items:center; justify-content:space-between;
+        padding:10px 16px; margin-bottom:12px;
+        background:#eff6ff; border:1px solid #bfdbfe;
+        border-radius:8px; font-size:13px; color:#1e40af; font-weight:500;
+    `;
+    banner.innerHTML = `
+        <span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle; margin-right:6px;">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+            Showing files for: <strong style="margin-left:4px;">${userLabel}</strong>
+        </span>
+        <button onclick="clearUserFilter()" style="
+            background:none; border:none; cursor:pointer;
+            color:#2563eb; font-size:13px; font-weight:600; padding:2px 8px; border-radius:4px;">
+            ✕ Clear filter
+        </button>
+    `;
+    uploadsSection.insertBefore(banner, uploadsSection.firstChild);
+}
+
+function clearUserFilter() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("user_filter");
+    url.searchParams.delete("user_email");
+    window.history.replaceState({}, "", url);
+    document.getElementById("userFilterBanner")?.remove();
+    selectedUserId = null;
+    document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
+    loadUploads();
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initPage() {
     await loadUser();
     const dashBtn = document.getElementById("dashboardBtn");
     if (dashBtn) { dashBtn.onclick = () => showPanel("dashboard"); }
     await loadCategories();
-    if (currentUser && currentUser.role === "admin") await loadAdminUserList();
+    if (currentUser && currentUser.role === "admin") {
+        await loadAdminUserList();
+
+        // ── NEW: auto-filter if coming from users.html ──
+        if (userFilterId) {
+            const userItem = document.getElementById(`user-item-${userFilterId}`);
+            if (userItem) {
+                // Simulate clicking that user in the sidebar
+                selectedUserId = parseInt(userFilterId);
+                document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
+                userItem.classList.add("active");
+                // Show a banner
+                showUserFilterBanner(userFilterEmail || `User #${userFilterId}`);
+            }
+        }
+    }
     await loadUploads(true);
     checkUploadReady();
     resumePollingForProcessingFiles();
 }
-
 initPage();
