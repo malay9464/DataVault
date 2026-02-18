@@ -27,22 +27,6 @@
     </div>
 </div>
 
-<!-- Keyboard Shortcuts Modal -->
-<div id="shortcutsModal" class="modal-overlay" style="display:none;">
-    <div class="modal-box shortcuts-modal">
-        <div class="modal-header">
-            <h3>⌨️ Keyboard Shortcuts</h3>
-            <span class="modal-close" onclick="toggleShortcuts()">×</span>
-        </div>
-        <div class="modal-body shortcuts-list">
-            <div class="shortcut-item"><kbd>/</kbd><span>Focus search</span></div>
-            <div class="shortcut-item"><kbd>N</kbd><span>New upload</span></div>
-            <div class="shortcut-item"><kbd>Esc</kbd><span>Close modals</span></div>
-            <div class="shortcut-item"><kbd>?</kbd><span>Toggle shortcuts</span></div>
-        </div>
-    </div>
-</div>
-
 <!-- SIDEBAR -->
 <div class="sidebar">
     <div class="sidebar-top">
@@ -69,16 +53,6 @@
                 All Files
             </span>
             <span class="count-badge" id="allCount">0</span>
-        </div>
-
-        <div class="category" onclick="applyFilter('uncat', this)">
-            <span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                </svg>
-                Uncategorized
-            </span>
-            <span class="count-badge" id="uncatCount">0</span>
         </div>
 
         <hr>

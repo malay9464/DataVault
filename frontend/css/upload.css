@@ -1326,37 +1326,6 @@ table td:nth-child(2) strong {
   border-top: 1px solid var(--border);
 }
 
-.shortcuts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.shortcut-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  background: var(--bg-main);
-  border-radius: var(--radius-sm);
-}
-
-.shortcut-item kbd {
-  background: var(--text-primary);
-  color: white;
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: monospace;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.shortcut-item span {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
 /* ---------- TOAST NOTIFICATIONS ---------- */
 #toastContainer {
   position: fixed;

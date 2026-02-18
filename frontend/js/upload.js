@@ -49,27 +49,6 @@ const emptyState = document.getElementById("emptyState");
 const tableWrapper = document.getElementById("tableWrapper");
 const tableSkeleton = document.getElementById("tableSkeleton");
 
-// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
-document.addEventListener("keydown", (e) => {
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
-        if (e.key === "Escape") e.target.blur();
-        return;
-    }
-    if (e.key === "/") { e.preventDefault(); searchInput.focus(); }
-    if (e.key === "n" || e.key === "N") { e.preventDefault(); fileInput.click(); }
-    if (e.key === "?") { e.preventDefault(); toggleShortcuts(); }
-    if (e.key === "Escape") {
-        closeAddUserModal();
-        const shortcutsModal = document.getElementById("shortcutsModal");
-        if (shortcutsModal) shortcutsModal.style.display = "none";
-    }
-});
-
-function toggleShortcuts() {
-    const modal = document.getElementById("shortcutsModal");
-    modal.style.display = (modal.style.display === "none" || !modal.style.display) ? "flex" : "none";
-}
-
 // ─── AUTH FETCH ───────────────────────────────────────────────────────────────
 async function authFetch(url, options = {}) {
     const res = await fetch(url, {
@@ -361,10 +340,6 @@ async function loadCategories() {
 
         cats.forEach(c => {
             allCount += c.uploads;
-            if (c.name.toLowerCase() === "uncategorized") {
-                uncatCount = c.uploads;
-                return;
-            }
             const div = document.createElement("div");
             div.className = "category";
             div.dataset.categoryId = c.id;
@@ -393,16 +368,7 @@ async function loadCategories() {
                 categoryList.appendChild(div);
         });
 
-        const uncatEntry = cats.find(c => c.name.toLowerCase() === "uncategorized");
-        if (uncatEntry) {
-            const sidebarUncatEl = document.querySelector(".sidebar-top .category:nth-child(3)");
-            if (sidebarUncatEl) {
-                sidebarUncatEl.addEventListener("dragover",  (e) => onCategoryDragOver(e, uncatEntry.id));
-                sidebarUncatEl.addEventListener("dragenter", (e) => onCategoryDragEnter(e, uncatEntry.id));
-                sidebarUncatEl.addEventListener("dragleave", (e) => onCategoryDragLeave(e));
-                sidebarUncatEl.addEventListener("drop",      (e) => onCategoryDrop(e, uncatEntry.id, uncatEntry.name));
-            }
-        }
+        if (allCountSpan) allCountSpan.innerText = allCount;
 
         if (allCountSpan) allCountSpan.innerText = allCount;
         if (uncatCountSpan) uncatCountSpan.innerText = uncatCount;
@@ -768,10 +734,7 @@ async function loadUploads(showSkeleton = false) {
         params.append("category_id", selectedCategoryId);
 
     if (currentUser.role !== "admin") {
-        if (currentFilter === "uncat") {
-            const uncatEntry = categoriesCache.find(c => c.name.toLowerCase() === "uncategorized");
-            if (uncatEntry) params.append("category_id", uncatEntry.id);
-        } else if (currentFilter !== "all") {
+        if (currentFilter !== "all") {
             params.append("category_id", currentFilter);
         }
     }
