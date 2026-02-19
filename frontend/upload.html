@@ -2,6 +2,9 @@
 <html>
 <head>
     <title>Data Vault</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/upload.css">
     <link rel="stylesheet" href="/static/css/dashboard.css">
     <script src="https://unpkg.com/feather-icons"></script>
@@ -11,15 +14,15 @@
 
 <!-- HEADER -->
 <div class="top-header">
-    <span style="letter-spacing:0.3px;">
-        <svg class="header-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <span>
+        <svg class="header-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
         </svg>
         Data Vault
     </span>
     <div class="header-actions">
         <button class="logout-btn" onclick="logout()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
             </svg>
             Logout
@@ -31,23 +34,19 @@
 <div class="sidebar">
     <div class="sidebar-top">
 
-        <!-- Dashboard link — admin only, hidden for users -->
-        <div id="dashboardBtn" class="category" style="display:none; margin-bottom:4px; background:rgba(99,102,241,0.15);">
+        <div id="dashboardBtn" class="category" style="display:none; margin-bottom:2px;">
             <span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
                     <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
                 </svg>
                 Dashboard
             </span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.5;">
-                <polyline points="9 18 15 12 9 6"/>
-            </svg>
         </div>
 
         <div class="category active" onclick="applyFilter('all', this)">
             <span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
                 </svg>
                 All Files
@@ -62,16 +61,15 @@
     <div class="sidebar-scroll" id="categoryList"></div>
 
     <div class="sidebar-bottom">
-        <hr>
         <div id="newCategoryBtn" onclick="addCategoryPrompt()" class="new-category-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             New Category
         </div>
-        <div id="addUserBtn" onclick="openAddUserModal()" class="new-category-btn" style="display:none; margin-top:6px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div id="addUserBtn" onclick="openAddUserModal()" class="new-category-btn" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
                 <circle cx="8.5" cy="7" r="4"/>
                 <line x1="20" y1="8" x2="20" y2="14"/>
@@ -80,15 +78,15 @@
             Add User
         </div>
         <div id="manageUsersBtn" onclick="location.href='/users.html'" class="new-category-btn" style="display:none;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
                 <circle cx="9" cy="7" r="4"/>
                 <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
             </svg>
             Manage Users
         </div>
-                <div id="profileBtn" onclick="openProfilePanel()" class="new-category-btn" style="margin-top:6px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div id="profileBtn" onclick="openProfilePanel()" class="new-category-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
             </svg>
@@ -103,52 +101,122 @@
 
         <div id="filesPanel">
 
-            <!-- Upload Section -->
-            <div class="upload-section">
-                <h2>Upload New File</h2>
-                <div class="upload-zone">
-                    <div class="select-wrapper">
-                        <svg class="select-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- ── USER STATS BAR (hidden for admin, shown for user) ── -->
+            <div class="user-stats-bar" id="userStatsBar" style="display:none;">
+                <div class="stat-pill">
+                    <div class="stat-pill-icon blue">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                    </div>
+                    <div class="stat-pill-body">
+                        <span class="stat-pill-value" id="statsFiles">—</span>
+                        <span class="stat-pill-label">Total Files</span>
+                    </div>
+                </div>
+                <div class="stat-pill">
+                    <div class="stat-pill-icon green">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                    </div>
+                    <div class="stat-pill-body">
+                        <span class="stat-pill-value" id="statsRecords">—</span>
+                        <span class="stat-pill-label">Total Records</span>
+                    </div>
+                </div>
+                <div class="stat-pill">
+                    <div class="stat-pill-icon purple">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
                         </svg>
-                        <select id="categorySelect">
-                            <option value="" disabled selected>— Select a category —</option>
-                        </select>
                     </div>
+                    <div class="stat-pill-body">
+                        <span class="stat-pill-value" id="statsCategories">—</span>
+                        <span class="stat-pill-label">Categories</span>
+                    </div>
+                </div>
+            </div>
 
-                    <div class="upload-box" id="uploadBox" onclick="fileInput.click()">
-                        <div class="upload-icon">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- ── COLLAPSIBLE UPLOAD SECTION ── -->
+            <div class="upload-section">
+
+                <!-- Toggle Header — always visible -->
+                <div class="upload-toggle-header" onclick="toggleUploadSection()" id="uploadToggleHeader">
+                    <div class="upload-toggle-left">
+                        <div class="upload-toggle-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                             </svg>
                         </div>
-                        <div class="upload-text">
-                            <strong>Click to select file</strong>
-                            <span>or drag and drop</span>
+                        <div class="upload-toggle-text">
+                            <strong>Upload New File</strong>
+                            <span>CSV, XLS or XLSX</span>
                         </div>
-                        <div class="file-types">
-                            <span class="file-type-badge">.CSV</span>
-                            <span class="file-type-badge">.XLS</span>
-                            <span class="file-type-badge">.XLSX</span>
-                        </div>
-                        <div id="fileName" class="file-preview" style="display:none;"></div>
                     </div>
-
-                    <input type="file" id="fileInput" hidden accept=".csv,.xls,.xlsx">
-
-                    <button id="uploadBtn" onclick="upload()" class="upload-btn">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5-5 5 5M12 5v12"/>
-                        </svg>
-                        Upload File
-                        <span id="uploadSpinner" class="spinner" style="display:none;"></span>
-                    </button>
-
-                    <div id="uploadProgress" class="upload-progress" style="display:none;">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progressFill"></div>
+                    <div class="upload-toggle-right">
+                        <div class="upload-format-chips">
+                            <span class="upload-chip">CSV</span>
+                            <span class="upload-chip">XLS</span>
+                            <span class="upload-chip">XLSX</span>
                         </div>
-                        <div class="progress-text" id="progressText">Uploading...</div>
+                        <svg class="upload-chevron" id="uploadChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Expandable body -->
+                <div class="upload-body" id="uploadBody">
+                    <div class="upload-body-inner">
+                        <div class="upload-zone">
+                            <div class="select-wrapper">
+                                <svg class="select-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                                </svg>
+                                <select id="categorySelect">
+                                    <option value="" disabled selected>— Select a category —</option>
+                                </select>
+                            </div>
+
+                            <div class="upload-box" id="uploadBox" onclick="fileInput.click()">
+                                <div class="upload-icon">
+                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                    </svg>
+                                </div>
+                                <div class="upload-text">
+                                    <strong>Click to select file</strong>
+                                    <span>or drag and drop</span>
+                                </div>
+                                <div class="file-types">
+                                    <span class="file-type-badge">.CSV</span>
+                                    <span class="file-type-badge">.XLS</span>
+                                    <span class="file-type-badge">.XLSX</span>
+                                </div>
+                                <div id="fileName" class="file-preview" style="display:none;"></div>
+                            </div>
+
+                            <input type="file" id="fileInput" hidden accept=".csv,.xls,.xlsx">
+
+                            <button id="uploadBtn" onclick="upload()" class="upload-btn" disabled>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5-5 5 5M12 5v12"/>
+                                </svg>
+                                Upload File
+                                <span id="uploadSpinner" class="spinner" style="display:none;"></span>
+                            </button>
+
+                            <div id="uploadProgress" class="upload-progress" style="display:none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <div class="progress-text" id="progressText">Uploading...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -159,16 +227,16 @@
             <div class="uploads-section">
                 <div class="section-header">
                     <h3>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
                         </svg>
                         Recent Uploads
                     </h3>
                     <button class="toggle-filters-btn" onclick="toggleAdvancedFilters()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                         </svg>
-                        Advanced Filters
+                        Filters
                     </button>
                 </div>
 
@@ -176,11 +244,9 @@
                 <div id="bulkActionBar" class="bulk-action-bar" style="display:none;">
                     <span id="bulkSelectedCount" class="bulk-count">0 selected</span>
                     <button class="btn-bulk-delete" onclick="bulkDelete()">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3 6 5 6 21 6"/>
                             <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                            <path d="M10 11v6M14 11v6"/>
-                            <path d="M9 6V4h6v2"/>
                         </svg>
                         Delete Selected
                     </button>
@@ -189,7 +255,7 @@
 
                 <!-- Search Box -->
                 <div class="search-container">
-                    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="11" cy="11" r="8"/>
                         <path d="M21 21l-4.35-4.35"/>
                     </svg>
@@ -200,7 +266,7 @@
                 <div id="advancedFilters" class="advanced-filters" style="display:none;">
                     <div class="filter-group">
                         <label>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="12" y1="1" x2="12" y2="23"/>
                                 <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
                             </svg>
@@ -214,10 +280,9 @@
                     </div>
                     <div class="filter-group">
                         <label>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="23 4 23 10 17 10"/>
-                                <polyline points="1 20 1 14 7 14"/>
-                                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                                <path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/>
                             </svg>
                             Duplicate Range
                         </label>
@@ -229,7 +294,7 @@
                     </div>
                     <div class="filter-group">
                         <label>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                                 <line x1="16" y1="2" x2="16" y2="6"/>
                                 <line x1="8" y1="2" x2="8" y2="6"/>
@@ -244,20 +309,8 @@
                         </div>
                     </div>
                     <div class="filter-actions">
-                        <button onclick="applyAdvancedSearch()" class="btn-primary">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <path d="M21 21l-4.35-4.35"/>
-                            </svg>
-                            Apply Filters
-                        </button>
-                        <button onclick="resetSearch()" class="btn-secondary">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="1 4 1 10 7 10"/>
-                                <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
-                            </svg>
-                            Reset
-                        </button>
+                        <button onclick="applyAdvancedSearch()" class="btn-primary">Apply</button>
+                        <button onclick="resetSearch()" class="btn-secondary">Reset</button>
                     </div>
                 </div>
 
@@ -277,13 +330,13 @@
 
                 <!-- Empty State -->
                 <div id="emptyState" class="empty-state" style="display:none;">
-                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
                         <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
                         <line x1="12" y1="11" x2="12" y2="17"/>
                         <line x1="9" y1="14" x2="15" y2="14"/>
                     </svg>
                     <h3 id="emptyMessage">No files have been uploaded yet</h3>
-                    <button id="emptyReset" onclick="resetSearch()" class="btn-primary" style="display:none;">
+                    <button id="emptyReset" onclick="resetSearch()" class="btn-primary" style="display:none; margin-top:14px;">
                         Reset Filters
                     </button>
                 </div>
@@ -293,13 +346,12 @@
 
         </div>
 
+        <!-- Dashboard Panel (admin) -->
         <div id="dashboardPanel" style="display:none;">
-
-            <!-- Page header -->
             <div class="page-header">
                 <div>
                     <h1 class="page-title">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
                             <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
                         </svg>
@@ -314,7 +366,6 @@
                 </div>
             </div>
 
-            <!-- Stat cards -->
             <div class="stat-grid">
                 <div class="stat-card">
                     <div class="stat-icon stat-icon--blue">
@@ -365,26 +416,13 @@
                         <div class="stat-label">Storage Health</div>
                         <div class="stat-value" id="stat-health">—</div>
                         <div class="stat-sub" id="stat-health-sub">orphaned rows in DB</div>
-                        <button
-                            id="cleanupBtn"
-                            onclick="cleanupOrphans()"
-                            style="display:none; margin-top:10px; padding:5px 12px;
-                                   font-size:12px; font-weight:500; border-radius:6px;
-                                   border:1px solid #fecaca; background:#fff5f5;
-                                   color:#dc2626; cursor:pointer;
-                                   display:none; align-items:center; gap:5px;">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                                <path d="M9 6V4h6v2"/>
-                            </svg>
+                        <button id="cleanupBtn" onclick="cleanupOrphans()" style="display:none; margin-top:10px; padding:5px 12px; font-size:12px; font-weight:500; border-radius:6px; border:1px solid #fecaca; background:#fff5f5; color:#dc2626; cursor:pointer; align-items:center; gap:5px;">
                             <span id="cleanupBtnText">Clean Up</span>
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Activity chart -->
             <div class="chart-row">
                 <div class="chart-card chart-card--full">
                     <div class="chart-header">
@@ -401,7 +439,6 @@
                 </div>
             </div>
 
-            <!-- Top users -->
             <div class="chart-row chart-row--half">
                 <div class="chart-card">
                     <div class="chart-header"><div>
@@ -419,7 +456,6 @@
                 </div>
             </div>
 
-            <!-- Data quality -->
             <div class="chart-row chart-row--third">
                 <div class="chart-card">
                     <div class="chart-header"><div>
@@ -444,7 +480,6 @@
                 </div>
             </div>
 
-            <!-- Recent activity feed -->
             <div class="feed-card">
                 <div class="chart-header">
                     <div>
@@ -452,7 +487,7 @@
                         <div class="chart-subtitle">Last 10 uploads across all users</div>
                     </div>
                     <button class="refresh-btn" onclick="loadDashboard()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"/>
                             <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
                         </svg>
@@ -474,9 +509,7 @@
                     </table>
                 </div>
             </div>
-
         </div>
-        <!-- /#dashboardPanel -->
 
     </div><!-- /.content-box -->
 </div><!-- /.main -->
@@ -487,7 +520,7 @@
     <div class="modal-box">
         <div class="modal-header">
             <h3>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
                     <circle cx="8.5" cy="7" r="4"/>
                     <line x1="20" y1="8" x2="20" y2="14"/>
@@ -499,23 +532,11 @@
         </div>
         <div class="modal-body">
             <div class="input-group">
-                <label>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                        <polyline points="22,6 12,13 2,6"/>
-                    </svg>
-                    Email Address
-                </label>
+                <label>Email Address</label>
                 <input type="email" id="newUserEmail" placeholder="user@example.com">
             </div>
             <div class="input-group">
-                <label>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                        <path d="M7 11V7a5 5 0 0110 0v4"/>
-                    </svg>
-                    Password
-                </label>
+                <label>Password</label>
                 <input type="password" id="newUserPassword" placeholder="Enter password">
                 <div class="password-strength" id="passwordStrength" style="display:none;">
                     <div class="strength-bar">
@@ -525,19 +546,12 @@
                 </div>
             </div>
             <div class="input-group">
-                <label>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
-                    </svg>
-                    Role
-                </label>
+                <label>Role</label>
                 <div class="role-selector">
                     <label class="radio-option">
                         <input type="radio" name="userRole" value="user" checked>
                         <div class="radio-card">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
@@ -548,7 +562,7 @@
                     <label class="radio-option">
                         <input type="radio" name="userRole" value="admin">
                         <div class="radio-card">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                             </svg>
                             <strong>Admin</strong>
@@ -560,202 +574,147 @@
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" onclick="closeAddUserModal()">Cancel</button>
-            <button class="btn-primary" onclick="createUser()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                    <circle cx="8.5" cy="7" r="4"/>
-                    <line x1="20" y1="8" x2="20" y2="14"/>
-                    <line x1="23" y1="11" x2="17" y2="11"/>
-                </svg>
-                Add User
-            </button>
+            <button class="btn-primary" onclick="createUser()">Add User</button>
         </div>
     </div>
 </div>
-
 
 <!-- TOAST CONTAINER -->
 <div id="toastContainer"></div>
+
 <!-- PROFILE SLIDE-IN PANEL -->
-<div id="profileOverlay" onclick="closeProfilePanel()" style="
-    display:none; position:fixed; inset:0;
-    background:rgba(0,0,0,0.4); backdrop-filter:blur(3px);
-    z-index:400; animation:fadeIn 0.2s ease;">
-</div>
+<div id="profileOverlay" onclick="closeProfilePanel()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(3px); z-index:400;"></div>
 
-<div id="profilePanel" style="
-    display:none; position:fixed; top:0; right:0;
-    width:380px; height:100vh;
-    background:#ffffff; z-index:401;
-    box-shadow:-8px 0 32px rgba(0,0,0,0.15);
-    flex-direction:column; overflow:hidden;
-    transform:translateX(100%); transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);">
-
-    <!-- Panel Header -->
-    <div style="
-        background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding:28px 24px 24px;
-        position:relative; flex-shrink:0;">
-
-        <!-- Close button -->
-        <button onclick="closeProfilePanel()" style="
-            position:absolute; top:16px; right:16px;
-            background:rgba(255,255,255,0.1); border:none;
-            color:#f1f5f9; width:32px; height:32px; border-radius:8px;
-            cursor:pointer; font-size:18px; line-height:1;
-            display:flex; align-items:center; justify-content:center;
-            transition:background 0.15s ease;">×</button>
-
-        <!-- Avatar + Email -->
+<div id="profilePanel" style="display:none; position:fixed; top:0; right:0; width:380px; height:100vh; background:#ffffff; z-index:401; box-shadow:-8px 0 32px rgba(0,0,0,0.15); flex-direction:column; overflow:hidden; transform:translateX(100%); transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);">
+    <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding:28px 24px 24px; position:relative; flex-shrink:0;">
+        <button onclick="closeProfilePanel()" style="position:absolute; top:16px; right:16px; background:rgba(255,255,255,0.1); border:none; color:#f1f5f9; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center;">×</button>
         <div style="display:flex; align-items:center; gap:16px;">
-            <div id="profileAvatar" style="
-                width:56px; height:56px; border-radius:16px;
-                background:linear-gradient(135deg, #2563eb, #7c3aed);
-                display:flex; align-items:center; justify-content:center;
-                font-size:22px; font-weight:700; color:white;
-                flex-shrink:0;">?</div>
+            <div id="profileAvatar" style="width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, #2563eb, #7c3aed); display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700; color:white; flex-shrink:0;">?</div>
             <div style="min-width:0;">
-                <div id="profileEmail" style="
-                    font-size:14px; font-weight:600; color:#f1f5f9;
-                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                    Loading...
-                </div>
-                <div style="display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
-                    <span id="profileRoleBadge" style="
-                        padding:3px 10px; border-radius:20px; font-size:11px;
-                        font-weight:700; letter-spacing:0.5px;">
-                    </span>
-                    <span id="profileStatusBadge" style="
-                        padding:3px 10px; border-radius:20px; font-size:11px;
-                        font-weight:600;">
-                    </span>
+                <div id="profileEmail" style="font-size:14px; font-weight:600; color:#f1f5f9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Loading...</div>
+                <div style="display:flex; align-items:center; gap:7px; margin-top:5px; flex-wrap:wrap;">
+                    <span id="profileRoleBadge" style="padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.5px;"></span>
+                    <span id="profileStatusBadge" style="padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600;"></span>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Panel Body -->
     <div style="flex:1; overflow-y:auto; padding:0 0 24px 0;">
-
-        <!-- Stats Row -->
-        <div style="
-            display:grid; grid-template-columns:1fr 1fr;
-            gap:1px; background:#e2e8f0; border-bottom:1px solid #e2e8f0;">
-
-            <div style="background:#f8fafc; padding:20px 24px; text-align:center;">
-                <div id="profileUploads" style="
-                    font-size:28px; font-weight:700; color:#0f172a;
-                    font-variant-numeric:tabular-nums;">—</div>
-                <div style="font-size:12px; color:#64748b; font-weight:500; margin-top:2px;">Total Uploads</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:#e2e8f0; border-bottom:1px solid #e2e8f0;">
+            <div style="background:#f8fafc; padding:18px 20px; text-align:center;">
+                <div id="profileUploads" style="font-size:26px; font-weight:700; color:#0f172a; letter-spacing:-0.5px;">—</div>
+                <div style="font-size:11px; color:#64748b; font-weight:500; margin-top:2px;">Total Uploads</div>
             </div>
-
-            <div style="background:#f8fafc; padding:20px 24px; text-align:center;">
-                <div id="profileRecords" style="
-                    font-size:28px; font-weight:700; color:#0f172a;
-                    font-variant-numeric:tabular-nums;">—</div>
-                <div style="font-size:12px; color:#64748b; font-weight:500; margin-top:2px;">Total Records</div>
+            <div style="background:#f8fafc; padding:18px 20px; text-align:center;">
+                <div id="profileRecords" style="font-size:26px; font-weight:700; color:#0f172a; letter-spacing:-0.5px;">—</div>
+                <div style="font-size:11px; color:#64748b; font-weight:500; margin-top:2px;">Total Records</div>
             </div>
         </div>
-
-        <!-- Account Info -->
-        <div style="padding:20px 24px 0;">
-            <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">
-                Account Info
-            </div>
-
-            <div style="display:flex; flex-direction:column; gap:10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-                    <span style="font-size:13px; color:#64748b; font-weight:500;">Email</span>
-                    <span id="profileEmailInfo" style="font-size:13px; color:#0f172a; font-weight:600; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">—</span>
+        <div style="padding:18px 22px 0;">
+            <div style="font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:10px;">Account Info</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:11px 13px; background:#f8fafc; border-radius:9px; border:1px solid #e2e8f0;">
+                    <span style="font-size:12.5px; color:#64748b; font-weight:500;">Email</span>
+                    <span id="profileEmailInfo" style="font-size:12.5px; color:#0f172a; font-weight:600; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">—</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-                    <span style="font-size:13px; color:#64748b; font-weight:500;">Role</span>
-                    <span id="profileRoleInfo" style="font-size:13px; color:#0f172a; font-weight:600;">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:11px 13px; background:#f8fafc; border-radius:9px; border:1px solid #e2e8f0;">
+                    <span style="font-size:12.5px; color:#64748b; font-weight:500;">Role</span>
+                    <span id="profileRoleInfo" style="font-size:12.5px; color:#0f172a; font-weight:600;">—</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-                    <span style="font-size:13px; color:#64748b; font-weight:500;">Status</span>
-                    <span id="profileStatusInfo" style="font-size:13px; font-weight:600;">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:11px 13px; background:#f8fafc; border-radius:9px; border:1px solid #e2e8f0;">
+                    <span style="font-size:12.5px; color:#64748b; font-weight:500;">Status</span>
+                    <span id="profileStatusInfo" style="font-size:12.5px; font-weight:600;">—</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
-                    <span style="font-size:13px; color:#64748b; font-weight:500;">Member since</span>
-                    <span id="profileSince" style="font-size:13px; color:#0f172a; font-weight:600;">—</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:11px 13px; background:#f8fafc; border-radius:9px; border:1px solid #e2e8f0;">
+                    <span style="font-size:12.5px; color:#64748b; font-weight:500;">Member since</span>
+                    <span id="profileSince" style="font-size:12.5px; color:#0f172a; font-weight:600;">—</span>
                 </div>
             </div>
         </div>
-
-        <!-- Change Password -->
-        <div style="padding:20px 24px 0;">
-            <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">
-                Security
-            </div>
-
-            <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
-                <!-- Toggle row -->
-                <button onclick="togglePasswordForm()" style="
-                    width:100%; display:flex; align-items:center; justify-content:space-between;
-                    padding:14px 16px; background:#f8fafc; border:none; cursor:pointer;
-                    font-size:14px; font-weight:600; color:#0f172a;
-                    transition:background 0.15s ease;" id="pwToggleBtn">
-                    <span style="display:flex; align-items:center; gap:10px;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2">
+        <div style="padding:18px 22px 0;">
+            <div style="font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:10px;">Security</div>
+            <div style="border:1px solid #e2e8f0; border-radius:11px; overflow:hidden;">
+                <button onclick="togglePasswordForm()" style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:13px 15px; background:#f8fafc; border:none; cursor:pointer; font-size:13.5px; font-weight:600; color:#0f172a;">
+                    <span style="display:flex; align-items:center; gap:9px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                             <path d="M7 11V7a5 5 0 0110 0v4"/>
                         </svg>
                         Change Password
                     </span>
-                    <svg id="pwChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="transition:transform 0.2s ease;">
+                    <svg id="pwChevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="transition:transform 0.2s ease;">
                         <polyline points="6 9 12 15 18 9"/>
                     </svg>
                 </button>
-
-                <!-- Password form (hidden by default) -->
-                <div id="passwordForm" style="display:none; padding:16px; border-top:1px solid #e2e8f0; background:#fff;">
+                <div id="passwordForm" style="display:none; padding:15px; border-top:1px solid #e2e8f0; background:#fff;">
+                    <div style="margin-bottom:11px;">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#64748b; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.4px;">New Password</label>
+                        <input type="password" id="profileNewPw" placeholder="Enter new password" style="width:100%; padding:9px 11px; border:1px solid #e2e8f0; border-radius:8px; font-size:13.5px; outline:none;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e2e8f0'">
+                    </div>
                     <div style="margin-bottom:12px;">
-                        <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:6px;">New Password</label>
-                        <input type="password" id="profileNewPw" placeholder="Enter new password"
-                            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; transition:border-color 0.15s ease;"
-                            onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e2e8f0'">
+                        <label style="display:block; font-size:11px; font-weight:700; color:#64748b; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.4px;">Confirm Password</label>
+                        <input type="password" id="profileConfirmPw" placeholder="Confirm new password" style="width:100%; padding:9px 11px; border:1px solid #e2e8f0; border-radius:8px; font-size:13.5px; outline:none;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e2e8f0'">
                     </div>
-                    <div style="margin-bottom:14px;">
-                        <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:6px;">Confirm Password</label>
-                        <input type="password" id="profileConfirmPw" placeholder="Confirm new password"
-                            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; transition:border-color 0.15s ease;"
-                            onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e2e8f0'">
-                    </div>
-                    <div id="pwError" style="display:none; font-size:12px; color:#dc2626; margin-bottom:10px; padding:8px 12px; background:#fee2e2; border-radius:6px;"></div>
-                    <button onclick="savePassword()" style="
-                        width:100%; padding:10px; background:#2563eb; color:white;
-                        border:none; border-radius:8px; font-size:14px; font-weight:600;
-                        cursor:pointer; transition:background 0.15s ease;"
-                        onmouseover="this.style.background='#1e40af'"
-                        onmouseout="this.style.background='#2563eb'">
-                        Save Password
-                    </button>
+                    <div id="pwError" style="display:none; font-size:12px; color:#dc2626; margin-bottom:9px; padding:7px 11px; background:#fee2e2; border-radius:6px;"></div>
+                    <button onclick="savePassword()" style="width:100%; padding:9px; background:#2563eb; color:white; border:none; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer;" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#2563eb'">Save Password</button>
                 </div>
             </div>
         </div>
-
     </div>
-
-    <!-- Panel Footer — Logout -->
-    <div style="padding:16px 24px; border-top:1px solid #e2e8f0; flex-shrink:0;">
-        <button onclick="logout()" style="
-            width:100%; padding:11px; background:transparent;
-            border:1.5px solid #fca5a5; color:#dc2626;
-            border-radius:10px; font-size:14px; font-weight:600;
-            cursor:pointer; display:flex; align-items:center;
-            justify-content:center; gap:8px;
-            transition:all 0.15s ease;"
-            onmouseover="this.style.background='#fee2e2'"
-            onmouseout="this.style.background='transparent'">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div style="padding:14px 22px; border-top:1px solid #e2e8f0; flex-shrink:0;">
+        <button onclick="logout()" style="width:100%; padding:10px; background:transparent; border:1.5px solid #fca5a5; color:#dc2626; border-radius:9px; font-size:13.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
             </svg>
             Sign Out
         </button>
     </div>
 </div>
-<script src="/static/js/upload.js?v=3"></script>
+
+<script>
+// ── UPLOAD SECTION TOGGLE ──────────────────────────────────────────────────
+function toggleUploadSection() {
+    const body = document.getElementById("uploadBody");
+    const chevron = document.getElementById("uploadChevron");
+    const isOpen = body.classList.contains("open");
+    body.classList.toggle("open", !isOpen);
+    chevron.classList.toggle("open", !isOpen);
+}
+
+// ── USER STATS BAR ────────────────────────────────────────────────────────
+async function loadUserStats() {
+    try {
+        const res = await authFetch("/me/profile");
+        if (!res || !res.ok) return;
+        const d = await res.json();
+        const bar = document.getElementById("userStatsBar");
+        if (bar) bar.style.display = "grid";
+        document.getElementById("statsFiles").textContent = fmtNum(d.total_uploads);
+        document.getElementById("statsRecords").textContent = fmtNum(d.total_records);
+        // categories count from categoriesCache length
+        const catCount = categoriesCache.length;
+        document.getElementById("statsCategories").textContent = catCount || "—";
+    } catch(e) {}
+}
+</script>
+
+<script src="/static/js/upload.js?v=4"></script>
 <script src="/static/js/dashboard.js"></script>
+
+<script>
+// After upload.js finishes initPage(), load the stats bar for regular users.
+// We poll until currentUser is populated (initPage is async).
+(function() {
+    const t = setInterval(() => {
+        if (typeof currentUser === "undefined" || !currentUser) return;
+        clearInterval(t);
+        if (currentUser.role !== "admin") {
+            loadUserStats();
+        }
+    }, 100);
+    setTimeout(() => clearInterval(t), 6000);
+})();
+</script>
+
 </body>
 </html>
