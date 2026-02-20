@@ -202,14 +202,24 @@
 
     <!-- CONTROLS -->
     <div class="controls">
+        <!-- FILE filter (all users) -->
         <div class="fg">
             <span class="fl">File</span>
             <select class="fs" id="fUp" style="min-width:210px;"><option value="">All Files</option></select>
         </div>
+
+        <!-- CATEGORY filter (regular users only) -->
+        <div class="fg" id="categoryWrap" style="display:none;">
+            <span class="fl">Category</span>
+            <select class="fs" id="fCat" style="min-width:190px;"><option value="">All Categories</option></select>
+        </div>
+
+        <!-- USER filter (admin only) -->
         <div class="fg" id="adminWrap" style="display:none;">
             <span class="fl">User</span>
-            <select class="fs" id="fUsr" style="min-width:190px;"><option value="">All Users</option></select>
+            <select class="fs" id="fUsr" style="min-width:190px;" onchange="loadFiles()"><option value="">All Users</option></select>
         </div>
+
         <div class="cdiv"></div>
         <div class="fg">
             <span class="fl">View</span>
@@ -258,7 +268,7 @@
 const token = localStorage.getItem("access_token");
 if (!token) window.location.href = "/static/login.html";
 
-let cu=null, view="key", tab="all", page=1, selUp="", selUsr="";
+let cu=null, view="key", tab="all", page=1, selUp="", selUsr="", selCat="";
 const PS=20, FS=15;
 
 async function af(url,o={}){
@@ -275,9 +285,22 @@ function fmt(n){if(n==null)return"—";if(n>=1e6)return(n/1e6).toFixed(1)+"M";if
 
 async function init(){
     const r=await af("/me"); cu=await r.json();
-    if(cu.role==="admin"){document.getElementById("adminWrap").style.display="flex";await loadUsers();}
+    if(cu.role==="admin"){
+        document.getElementById("adminWrap").style.display="flex";
+        await loadUsers();
+    } else {
+        document.getElementById("categoryWrap").style.display="flex";
+        await loadCategories();
+    }
     await loadFiles();
     await Promise.all([loadStats(),load()]);
+}
+
+async function loadCategories(){
+    const r=await af("/categories");if(!r.ok)return;
+    const cats=await r.json();const s=document.getElementById("fCat");
+    s.innerHTML='<option value="">All Categories</option>';
+    cats.forEach(c=>{const o=document.createElement("option");o.value=c.id;o.textContent=c.name.length>45?c.name.slice(0,43)+"\u2026":c.name;s.appendChild(o);});
 }
 
 async function loadUsers(){
@@ -287,10 +310,14 @@ async function loadUsers(){
 }
 
 async function loadFiles(){
-    const r=await af("/uploads");if(!r.ok)return;
+    let url="/uploads";
+    const usrSel=document.getElementById("fUsr");
+    const usrVal=usrSel?.value||"";
+    if(usrVal)url+="?created_by_user_id="+usrVal;
+    const r=await af(url);if(!r.ok)return;
     const us=await r.json();const s=document.getElementById("fUp");
     s.innerHTML='<option value="">All Files</option>';
-    us.filter(u=>u.processing_status==="ready").forEach(u=>{const o=document.createElement("option");o.value=u.upload_id;o.textContent=u.filename.length>55?u.filename.slice(0,53)+"…":u.filename;s.appendChild(o);});
+    us.filter(u=>u.processing_status==="ready").forEach(u=>{const o=document.createElement("option");o.value=u.upload_id;o.textContent=u.filename.length>55?u.filename.slice(0,53)+"\u2026":u.filename;s.appendChild(o);});
 }
 
 async function loadStats(){
@@ -310,6 +337,7 @@ function bp(statsOnly=false){
     const p=new URLSearchParams();
     if(selUp) p.append("upload_id",selUp);
     if(selUsr)p.append("user_id",selUsr);
+    if(selCat)p.append("category_id",selCat);
     if(!statsOnly){
         p.append("match_type",tab);
         p.append("sort",document.getElementById("sortSel").value);
@@ -352,8 +380,10 @@ function mkCard(g){
     const PREV=5;
     const adminTH=cu.role==="admin"?"<th>Uploader</th>":"";
     const rowsHTML=recs.slice(0,PREV).map(r=>mkRow(r,cols,ff)).join("");
-    const hidden=recs.length-PREV;
-    const smr=hidden>0?`<tr class="smr-row"><td colspan="${cols.length+1+(cu.role==="admin"?1:0)}"><button class="smr-btn" onclick="expandRows(this)">Show ${hidden} more ▾</button></td></tr>`:"";
+    const totalCount=g.record_count;
+    const shownCount=Math.min(PREV,recs.length);
+    const remaining=totalCount-shownCount;
+    const smr=remaining>0?`<tr class="smr-row"><td colspan="${cols.length+1+(cu.role==="admin"?1:0)}"><button class="smr-btn" onclick="expandRows(this)">Show ${Math.min(remaining,100)} more of ${remaining} remaining ▾</button></td></tr>`:"";
     card.innerHTML=`
       <div class="ghdr" onclick="this.parentElement.classList.toggle('open')">
         <div class="ghdr-l">
@@ -372,7 +402,7 @@ function mkCard(g){
       ${ftags?`<div class="ftags">${ftags}</div>`:""}
       <div class="gbody">
         <div class="rtw">
-          <table class="rtable" data-all='${JSON.stringify(recs)}' data-cols='${JSON.stringify(cols)}' data-ff='${ff}'>
+          <table class="rtable" data-gkey='${g.raw_key}' data-gtype='${g.match_type}' data-cols='${JSON.stringify(cols)}' data-ff='${ff}' data-recpage='2'>
             <thead><tr><th>Source File</th>${cols.map(c=>`<th>${c.replace(/_/g," ").toUpperCase()}</th>`).join("")}${adminTH}</tr></thead>
             <tbody>${rowsHTML}${smr}</tbody>
           </table>
@@ -389,10 +419,41 @@ function mkRow(r,cols,ff){
     return`<tr><td style="min-width:160px;">${chip}</td>${cells}${aCell}</tr>`;
 }
 
-function expandRows(btn){
+async function expandRows(btn){
     const t=btn.closest("table");
-    const recs=JSON.parse(t.dataset.all),cols=JSON.parse(t.dataset.cols),ff=t.dataset.ff;
-    t.querySelector("tbody").innerHTML=recs.map(r=>mkRow(r,cols,ff)).join("");
+    const gkey=t.dataset.gkey, gtype=t.dataset.gtype;
+    const cols=JSON.parse(t.dataset.cols), ff=t.dataset.ff;
+    let recPage=parseInt(t.dataset.recpage||"1");
+
+    btn.textContent="Loading…";btn.disabled=true;
+
+    const p=new URLSearchParams();
+    p.append("group_key",gkey);p.append("match_type",gtype);
+    p.append("page",recPage);p.append("page_size",100);
+    if(selUp)p.append("upload_id",selUp);
+    if(selUsr)p.append("user_id",selUsr);
+
+    const r=await af("/related-group-records?"+p.toString());
+    if(!r.ok){btn.textContent="Error loading";btn.disabled=false;return;}
+    const d=await r.json();
+
+    // Remove the show-more row
+    const smrRow=t.querySelector(".smr-row");if(smrRow)smrRow.remove();
+
+    // Append new rows
+    const tbody=t.querySelector("tbody");
+    d.records.forEach(rec=>tbody.insertAdjacentHTML("beforeend",mkRow(rec,cols,ff)));
+
+    recPage++;
+    t.dataset.recpage=recPage;
+    const loaded=tbody.querySelectorAll("tr").length;
+    const remaining=d.total-loaded;
+
+    if(remaining>0){
+        tbody.insertAdjacentHTML("beforeend",`<tr class="smr-row"><td colspan="${cols.length+1+(cu.role==="admin"?1:0)}">
+            <button class="smr-btn" onclick="expandRows(this)">Show ${Math.min(remaining,100)} more of ${remaining} remaining ▾</button>
+        </td></tr>`);
+    }
 }
 
 /* ── BY FILE ── */
@@ -431,11 +492,11 @@ function emptyHTML(h,p){return`<div class="empty"><svg width="68" height="68" vi
 
 function setView(v){view=v;page=1;document.getElementById("vKey").classList.toggle("active",v==="key");document.getElementById("vFile").classList.toggle("active",v==="file");load();}
 function setTab(t,el){tab=t;page=1;document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));el.classList.add("active");load();}
-function applyFilters(){selUp=document.getElementById("fUp").value;selUsr=document.getElementById("fUsr")?.value||"";page=1;loadStats();load();}
+function applyFilters(){selUp=document.getElementById("fUp").value;selUsr=document.getElementById("fUsr")?.value||"";selCat=document.getElementById("fCat")?.value||"";page=1;loadStats();load();}
 function resetFilters(){
-    document.getElementById("fUp").value="";const fu=document.getElementById("fUsr");if(fu)fu.value="";
+    document.getElementById("fUp").value="";const fu=document.getElementById("fUsr");if(fu)fu.value="";const fc=document.getElementById("fCat");if(fc)fc.value="";
     document.getElementById("sortSel").value="size-desc";
-    selUp="";selUsr="";tab="all";page=1;view="key";
+    selUp="";selUsr="";selCat="";tab="all";page=1;view="key";
     document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));document.querySelector('.tab[data-t="all"]').classList.add("active");
     document.getElementById("vKey").classList.add("active");document.getElementById("vFile").classList.remove("active");
     loadStats();load();

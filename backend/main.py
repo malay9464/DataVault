@@ -2258,6 +2258,26 @@ def related_grouped_stats(
         "both_records": stats.both_records
     }
 
+# ═══════════════════════════════════════════════════════════════════
+# In main.py — update BOTH /related-grouped-all AND /related-all-stats
+# to support category_id filtering (for regular users)
+# AND change LIMIT 5 for preview records (instead of 50)
+# ═══════════════════════════════════════════════════════════════════
+
+# In /related-grouped-all signature, add:
+#     category_id: int | None = None,
+# 
+# Then in the upload_filters block, add after the existing filters:
+#
+#     if category_id:
+#         upload_filters.append("ul.category_id = :cat_id")
+#         filter_params["cat_id"] = category_id
+#
+# And change the records fetch LIMIT from 50 to 5:
+#     LIMIT 5    ← was LIMIT 50
+
+# ── COMPLETE UPDATED /related-grouped-all ──────────────────────────
+
 @app.get("/related-grouped-all")
 def related_grouped_all(
     page: int = Query(1, ge=1),
@@ -2266,6 +2286,7 @@ def related_grouped_all(
     sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),
     upload_id: int | None = None,
     user_id: int | None = None,
+    category_id: int | None = None,
     user: dict = Depends(get_current_user)
 ):
     if sort == "size-desc":
@@ -2290,9 +2311,12 @@ def related_grouped_all(
         upload_filters.append("ul.upload_id = :up_id")
         filter_params["up_id"] = upload_id
 
+    if category_id:
+        upload_filters.append("ul.category_id = :cat_id")
+        filter_params["cat_id"] = category_id
+
     upload_filter_sql = " AND ".join(upload_filters)
 
-    # ── Step 1: Get paginated groups from cache + visible upload IDs ──
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
             WITH visible AS (
@@ -2351,9 +2375,7 @@ def related_grouped_all(
             ).fetchall()
         ]
 
-    # ── Step 2: Fetch actual records for each group (separate connection) ──
     groups = []
-
     if not rows or not visible_ids:
         return {"total_groups": total, "page": page, "page_size": page_size, "groups": groups}
 
@@ -2366,13 +2388,11 @@ def related_grouped_all(
                     label = f"📧 {row.group_key}"
                     where_clause = "NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') = :key1"
                     rec_params = {"key1": row.group_key}
-
                 elif row.match_type == "phone":
                     label = f"📱 {row.group_key}"
                     where_clause = "NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') = :key1"
                     rec_params = {"key1": row.group_key}
-
-                else:  # merged
+                else:
                     parts = row.group_key.split("__", 1)
                     if len(parts) == 2:
                         label = f"📧 {parts[0]} | 📱 {parts[1]}"
@@ -2386,6 +2406,7 @@ def related_grouped_all(
                         where_clause = "FALSE"
                         rec_params = {}
 
+                # Only fetch 5 preview records — rest loaded on demand via /related-group-records
                 records = conn.execute(text(f"""
                     SELECT cd.id, cd.upload_id, cd.row_data,
                            ul.filename, c.name AS category_name
@@ -2395,11 +2416,11 @@ def related_grouped_all(
                     WHERE cd.upload_id IN ({uid_placeholders})
                       AND {where_clause}
                     ORDER BY cd.upload_id, cd.id
-                    LIMIT 50
+                    LIMIT 5
                 """), rec_params).fetchall()
 
             except Exception as e:
-                print(f"[related-grouped-all] Failed to fetch records for group {row.group_key}: {e}")
+                print(f"[related-grouped-all] Failed for group {row.group_key}: {e}")
                 records = []
 
             groups.append({
@@ -2424,10 +2445,14 @@ def related_grouped_all(
 
     return {"total_groups": total, "page": page, "page_size": page_size, "groups": groups}
 
+
+# ── UPDATED /related-all-stats — add category_id param ─────────────
+
 @app.get("/related-all-stats")
 def related_all_stats(
     upload_id: int | None = None,
     user_id: int | None = None,
+    category_id: int | None = None,
     user: dict = Depends(get_current_user)
 ):
     upload_filters = ["ul.processing_status = 'ready'"]
@@ -2443,6 +2468,10 @@ def related_all_stats(
     if upload_id:
         upload_filters.append("ul.upload_id = :up_id")
         filter_params["up_id"] = upload_id
+
+    if category_id:
+        upload_filters.append("ul.category_id = :cat_id")
+        filter_params["cat_id"] = category_id
 
     upload_filter_sql = " AND ".join(upload_filters)
 
@@ -2483,6 +2512,108 @@ def related_all_stats(
         "both_groups":   s.both_groups,
         "both_records":  s.both_records,
         "total_files":   s.total_files,
+    }
+
+
+# ── ADD NEW /related-group-records ENDPOINT ────────────────────────
+# (paste this as a new endpoint anywhere in main.py)
+
+@app.get("/related-group-records")
+def related_group_records(
+    group_key: str,
+    match_type: str = Query(..., regex="^(email|phone|merged)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    upload_id: int | None = None,
+    user_id: int | None = None,
+    category_id: int | None = None,
+    user: dict = Depends(get_current_user)
+):
+    upload_filters = ["ul.processing_status = 'ready'"]
+    filter_params: dict = {}
+
+    if user["role"] != "admin":
+        upload_filters.append("ul.created_by_user_id = :owner_id")
+        filter_params["owner_id"] = user["id"]
+    elif user_id:
+        upload_filters.append("ul.created_by_user_id = :filter_uid")
+        filter_params["filter_uid"] = user_id
+
+    if upload_id:
+        upload_filters.append("ul.upload_id = :up_id")
+        filter_params["up_id"] = upload_id
+
+    if category_id:
+        upload_filters.append("ul.category_id = :cat_id")
+        filter_params["cat_id"] = category_id
+
+    upload_filter_sql = " AND ".join(upload_filters)
+    offset = (page - 1) * page_size
+
+    if match_type == "email":
+        where_clause = "NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') = :key1"
+        rec_params = {"key1": group_key}
+    elif match_type == "phone":
+        where_clause = "NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') = :key1"
+        rec_params = {"key1": group_key}
+    else:
+        parts = group_key.split("__", 1)
+        if len(parts) == 2:
+            where_clause = (
+                "NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') = :key1 "
+                "AND NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') = :key2"
+            )
+            rec_params = {"key1": parts[0], "key2": parts[1]}
+        else:
+            return {"total": 0, "page": page, "page_size": page_size, "records": []}
+
+    with engine.connect() as conn:
+        visible_ids = [
+            r.upload_id for r in conn.execute(
+                text(f"SELECT ul.upload_id FROM upload_log ul WHERE {upload_filter_sql}"),
+                filter_params
+            ).fetchall()
+        ]
+
+        if not visible_ids:
+            return {"total": 0, "page": page, "page_size": page_size, "records": []}
+
+        uid_placeholders = ",".join(str(uid) for uid in visible_ids)
+
+        total = conn.execute(text(f"""
+            SELECT COUNT(*)
+            FROM cleaned_data cd
+            JOIN upload_log ul ON ul.upload_id = cd.upload_id
+            WHERE cd.upload_id IN ({uid_placeholders})
+              AND {where_clause}
+        """), rec_params).scalar() or 0
+
+        records = conn.execute(text(f"""
+            SELECT cd.id, cd.upload_id, cd.row_data,
+                   ul.filename, c.name AS category_name
+            FROM cleaned_data cd
+            JOIN upload_log ul ON ul.upload_id = cd.upload_id
+            JOIN categories c  ON c.id = ul.category_id
+            WHERE cd.upload_id IN ({uid_placeholders})
+              AND {where_clause}
+            ORDER BY cd.upload_id, cd.id
+            LIMIT :lim OFFSET :off
+        """), {**rec_params, "lim": page_size, "off": offset}).fetchall()
+
+    return {
+        "total":     total,
+        "page":      page,
+        "page_size": page_size,
+        "records": [
+            {
+                "id":        r.id,
+                "upload_id": r.upload_id,
+                "filename":  r.filename,
+                "category":  r.category_name,
+                "data":      r.row_data
+            }
+            for r in records
+        ]
     }
 
 @app.get("/related-by-file")
