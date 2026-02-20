@@ -55,7 +55,7 @@ def copy_cleaned_data(engine, upload_id: int, df: pd.DataFrame):
         for row in rows:
             # Serialize JSON once
             json_str = _serialize(row)
-            # Write as CSV row: upload_id, json_string
+            json_str = json_str.replace('\\u0000', '').replace('\x00', '')
             # Use csv module for proper escaping
             csv_buffer.write(f"{upload_id}\t{json_str}\n")
         csv_buffer.seek(0)

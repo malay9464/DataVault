@@ -10,6 +10,8 @@ from header import (
 )
 import tempfile
 from pydantic import BaseModel
+from sqlalchemy import bindparam
+import sqlalchemy as sa
 from typing import Dict, Optional, List
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -502,6 +504,72 @@ async def upload_file(
         "message": "File queued for processing"
     }
 
+# ═══════════════════════════════════════════════════════════════════
+# ADD THIS FUNCTION anywhere in main.py (e.g. just above _process_file_background)
+# ═══════════════════════════════════════════════════════════════════
+
+def _build_cache_for_upload(upload_id: int):
+    """
+    Computes duplicate groups for one upload and stores in related_groups_cache.
+    Takes ~1-3s per file. Called at end of _process_file_background().
+    """
+    with engine.connect() as conn:
+        conn.execute(
+            text("DELETE FROM related_groups_cache WHERE upload_id = :uid"),
+            {"uid": upload_id}
+        )
+
+        # EMAIL
+        conn.execute(text("""
+            INSERT INTO related_groups_cache
+                (upload_id, group_key, match_type, record_count, file_count, upload_ids)
+            SELECT
+                :uid,
+                NULLIF(LOWER(TRIM(row_data->>'email')), 'nan'),
+                'email', COUNT(*), 1, ARRAY[:uid]
+            FROM cleaned_data
+            WHERE upload_id = :uid
+              AND NULLIF(LOWER(TRIM(row_data->>'email')), 'nan') IS NOT NULL
+            GROUP BY 2
+            HAVING COUNT(*) > 1
+        """), {"uid": upload_id})
+
+        # PHONE
+        conn.execute(text("""
+            INSERT INTO related_groups_cache
+                (upload_id, group_key, match_type, record_count, file_count, upload_ids)
+            SELECT
+                :uid,
+                NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),''),
+                'phone', COUNT(*), 1, ARRAY[:uid]
+            FROM cleaned_data
+            WHERE upload_id = :uid
+              AND NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),'') IS NOT NULL
+            GROUP BY 2
+            HAVING COUNT(*) > 1
+        """), {"uid": upload_id})
+
+        # MERGED
+        conn.execute(text("""
+            INSERT INTO related_groups_cache
+                (upload_id, group_key, match_type, record_count, file_count, upload_ids)
+            SELECT
+                :uid,
+                NULLIF(LOWER(TRIM(row_data->>'email')),'nan')
+                    || '__' ||
+                NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),''),
+                'merged', COUNT(*), 1, ARRAY[:uid]
+            FROM cleaned_data
+            WHERE upload_id = :uid
+              AND NULLIF(LOWER(TRIM(row_data->>'email')),'nan') IS NOT NULL
+              AND NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),'') IS NOT NULL
+            GROUP BY 2
+            HAVING COUNT(*) > 1
+        """), {"uid": upload_id})
+
+        conn.commit()
+    print(f"[CACHE] Built groups cache for upload_id={upload_id}")
+
 def _process_file_background(upload_id: int, queued_file_path: str,
                               original_filename: str):
     """
@@ -538,6 +606,7 @@ def _process_file_background(upload_id: int, queued_file_path: str,
             conn.commit()
 
         log_to_csv(original_filename, total_records, duplicate_records, 0, "SUCCESS")
+        _build_cache_for_upload(upload_id)
 
     except Exception as e:
         import traceback
@@ -2188,6 +2257,369 @@ def related_grouped_stats(
         "both_groups": stats.both_groups,
         "both_records": stats.both_records
     }
+
+@app.get("/related-grouped-all")
+def related_grouped_all(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    match_type: str = Query("all", regex="^(all|email|phone|merged)$"),
+    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),
+    upload_id: int | None = None,
+    user_id: int | None = None,
+    user: dict = Depends(get_current_user)
+):
+    if sort == "size-desc":
+        order_clause = "ORDER BY total_count DESC, group_key ASC"
+    elif sort == "size-asc":
+        order_clause = "ORDER BY total_count ASC, group_key ASC"
+    else:
+        order_clause = "ORDER BY group_key ASC"
+
+    offset = (page - 1) * page_size
+    upload_filters = ["ul.processing_status = 'ready'"]
+    filter_params: dict = {}
+
+    if user["role"] != "admin":
+        upload_filters.append("ul.created_by_user_id = :owner_id")
+        filter_params["owner_id"] = user["id"]
+    elif user_id:
+        upload_filters.append("ul.created_by_user_id = :filter_uid")
+        filter_params["filter_uid"] = user_id
+
+    if upload_id:
+        upload_filters.append("ul.upload_id = :up_id")
+        filter_params["up_id"] = upload_id
+
+    upload_filter_sql = " AND ".join(upload_filters)
+
+    # ── Step 1: Get paginated groups from cache + visible upload IDs ──
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"""
+            WITH visible AS (
+                SELECT ul.upload_id, ul.filename, c.name AS category_name,
+                       usr.email AS uploader_email
+                FROM upload_log ul
+                JOIN categories c   ON c.id  = ul.category_id
+                JOIN users      usr ON usr.id = ul.created_by_user_id
+                WHERE {upload_filter_sql}
+            ),
+            grouped AS (
+                SELECT
+                    rgc.group_key,
+                    rgc.match_type,
+                    SUM(rgc.record_count)                AS total_count,
+                    COUNT(DISTINCT rgc.upload_id)        AS file_count,
+                    ARRAY_AGG(DISTINCT v.filename)       AS filenames,
+                    ARRAY_AGG(DISTINCT v.uploader_email) AS uploaders
+                FROM related_groups_cache rgc
+                JOIN visible v ON v.upload_id = rgc.upload_id
+                WHERE (:match_type = 'all' OR rgc.match_type = :match_type)
+                GROUP BY rgc.group_key, rgc.match_type
+                HAVING COUNT(DISTINCT rgc.upload_id) > 1
+            ),
+            ranked AS (
+                SELECT *, ROW_NUMBER() OVER ({order_clause}) AS rn
+                FROM grouped
+            )
+            SELECT group_key, match_type, total_count AS record_count,
+                   file_count, filenames, uploaders
+            FROM ranked
+            WHERE rn BETWEEN :offset + 1 AND :offset + :limit
+            {order_clause}
+        """), {**filter_params, "match_type": match_type,
+               "offset": offset, "limit": page_size}).fetchall()
+
+        total = conn.execute(text(f"""
+            WITH visible AS (
+                SELECT ul.upload_id FROM upload_log ul WHERE {upload_filter_sql}
+            )
+            SELECT COUNT(*)
+            FROM (
+                SELECT rgc.group_key, rgc.match_type
+                FROM related_groups_cache rgc
+                JOIN visible v ON v.upload_id = rgc.upload_id
+                WHERE (:match_type = 'all' OR rgc.match_type = :match_type)
+                GROUP BY rgc.group_key, rgc.match_type
+                HAVING COUNT(DISTINCT rgc.upload_id) > 1
+            ) x
+        """), {**filter_params, "match_type": match_type}).scalar() or 0
+
+        visible_ids = [
+            r.upload_id for r in conn.execute(
+                text(f"SELECT ul.upload_id FROM upload_log ul WHERE {upload_filter_sql}"),
+                filter_params
+            ).fetchall()
+        ]
+
+    # ── Step 2: Fetch actual records for each group (separate connection) ──
+    groups = []
+
+    if not rows or not visible_ids:
+        return {"total_groups": total, "page": page, "page_size": page_size, "groups": groups}
+
+    uid_placeholders = ",".join(str(uid) for uid in visible_ids)
+
+    with engine.connect() as conn:
+        for row in rows:
+            try:
+                if row.match_type == "email":
+                    label = f"📧 {row.group_key}"
+                    where_clause = "NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') = :key1"
+                    rec_params = {"key1": row.group_key}
+
+                elif row.match_type == "phone":
+                    label = f"📱 {row.group_key}"
+                    where_clause = "NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') = :key1"
+                    rec_params = {"key1": row.group_key}
+
+                else:  # merged
+                    parts = row.group_key.split("__", 1)
+                    if len(parts) == 2:
+                        label = f"📧 {parts[0]} | 📱 {parts[1]}"
+                        where_clause = (
+                            "NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') = :key1 "
+                            "AND NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') = :key2"
+                        )
+                        rec_params = {"key1": parts[0], "key2": parts[1]}
+                    else:
+                        label = row.group_key
+                        where_clause = "FALSE"
+                        rec_params = {}
+
+                records = conn.execute(text(f"""
+                    SELECT cd.id, cd.upload_id, cd.row_data,
+                           ul.filename, c.name AS category_name
+                    FROM cleaned_data cd
+                    JOIN upload_log ul ON ul.upload_id = cd.upload_id
+                    JOIN categories c  ON c.id = ul.category_id
+                    WHERE cd.upload_id IN ({uid_placeholders})
+                      AND {where_clause}
+                    ORDER BY cd.upload_id, cd.id
+                    LIMIT 50
+                """), rec_params).fetchall()
+
+            except Exception as e:
+                print(f"[related-grouped-all] Failed to fetch records for group {row.group_key}: {e}")
+                records = []
+
+            groups.append({
+                "match_key":    label,
+                "raw_key":      row.group_key,
+                "match_type":   row.match_type,
+                "record_count": row.record_count,
+                "file_count":   row.file_count,
+                "filenames":    row.filenames,
+                "uploaders":    row.uploaders,
+                "records": [
+                    {
+                        "id":        r.id,
+                        "upload_id": r.upload_id,
+                        "filename":  r.filename,
+                        "category":  r.category_name,
+                        "data":      r.row_data
+                    }
+                    for r in records
+                ],
+            })
+
+    return {"total_groups": total, "page": page, "page_size": page_size, "groups": groups}
+
+@app.get("/related-all-stats")
+def related_all_stats(
+    upload_id: int | None = None,
+    user_id: int | None = None,
+    user: dict = Depends(get_current_user)
+):
+    upload_filters = ["ul.processing_status = 'ready'"]
+    filter_params: dict = {}
+
+    if user["role"] != "admin":
+        upload_filters.append("ul.created_by_user_id = :owner_id")
+        filter_params["owner_id"] = user["id"]
+    elif user_id:
+        upload_filters.append("ul.created_by_user_id = :filter_uid")
+        filter_params["filter_uid"] = user_id
+
+    if upload_id:
+        upload_filters.append("ul.upload_id = :up_id")
+        filter_params["up_id"] = upload_id
+
+    upload_filter_sql = " AND ".join(upload_filters)
+
+    with engine.begin() as conn:
+        s = conn.execute(text(f"""
+            WITH visible AS (
+                SELECT ul.upload_id FROM upload_log ul WHERE {upload_filter_sql}
+            ),
+            cross_file AS (
+                SELECT rgc.group_key, rgc.match_type,
+                       rgc.record_count, rgc.upload_id
+                FROM related_groups_cache rgc
+                JOIN visible v ON v.upload_id = rgc.upload_id
+                WHERE (rgc.group_key, rgc.match_type) IN (
+                    SELECT rgc2.group_key, rgc2.match_type
+                    FROM related_groups_cache rgc2
+                    JOIN visible v2 ON v2.upload_id = rgc2.upload_id
+                    GROUP BY rgc2.group_key, rgc2.match_type
+                    HAVING COUNT(DISTINCT rgc2.upload_id) > 1
+                )
+            )
+            SELECT
+                COUNT(DISTINCT CASE WHEN match_type='email'  THEN group_key END) AS email_groups,
+                COALESCE(SUM(CASE WHEN match_type='email'  THEN record_count END), 0) AS email_records,
+                COUNT(DISTINCT CASE WHEN match_type='phone'  THEN group_key END) AS phone_groups,
+                COALESCE(SUM(CASE WHEN match_type='phone'  THEN record_count END), 0) AS phone_records,
+                COUNT(DISTINCT CASE WHEN match_type='merged' THEN group_key END) AS both_groups,
+                COALESCE(SUM(CASE WHEN match_type='merged' THEN record_count END), 0) AS both_records,
+                COUNT(DISTINCT upload_id) AS total_files
+            FROM cross_file
+        """), filter_params).fetchone()
+
+    return {
+        "email_groups":  s.email_groups,
+        "email_records": s.email_records,
+        "phone_groups":  s.phone_groups,
+        "phone_records": s.phone_records,
+        "both_groups":   s.both_groups,
+        "both_records":  s.both_records,
+        "total_files":   s.total_files,
+    }
+
+@app.get("/related-by-file")
+def related_by_file(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=50),
+    match_type: str = Query("all", regex="^(all|email|phone|merged)$"),
+    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),
+    upload_id: int | None = None,
+    user_id: int | None = None,
+    user: dict = Depends(get_current_user)
+):
+    """Per-file duplicate summary view."""
+    upload_filters = ["ul.processing_status = 'ready'"]
+    filter_params: dict = {}
+
+    if user["role"] != "admin":
+        upload_filters.append("ul.created_by_user_id = :owner_id")
+        filter_params["owner_id"] = user["id"]
+    elif user_id:
+        upload_filters.append("ul.created_by_user_id = :filter_uid")
+        filter_params["filter_uid"] = user_id
+
+    if upload_id:
+        upload_filters.append("ul.upload_id = :up_id")
+        filter_params["up_id"] = upload_id
+
+    upload_filter_sql = " AND ".join(upload_filters)
+
+    if sort == "size-desc":
+        order_sql = "ORDER BY total_dup_records DESC, filename ASC"
+    elif sort == "size-asc":
+        order_sql = "ORDER BY total_dup_records ASC, filename ASC"
+    else:
+        order_sql = "ORDER BY filename ASC"
+
+    offset = (page - 1) * page_size
+
+    with engine.begin() as conn:
+        rows = conn.execute(text(f"""
+            WITH
+            visible_uploads AS (
+                SELECT ul.upload_id, ul.filename, ul.total_records,
+                       c.name AS category_name, usr.email AS uploader_email
+                FROM upload_log ul
+                JOIN categories c   ON c.id  = ul.category_id
+                JOIN users      usr ON usr.id = ul.created_by_user_id
+                WHERE {upload_filter_sql}
+            ),
+            normalized AS (
+                SELECT
+                    cd.upload_id,
+                    vu.filename, vu.category_name, vu.uploader_email, vu.total_records,
+                    NULLIF(LOWER(TRIM(cd.row_data->>'email')),'nan') AS email,
+                    NULLIF(REGEXP_REPLACE(COALESCE(cd.row_data->>'phone',''),'[^0-9]','','g'),'') AS phone
+                FROM cleaned_data cd
+                JOIN visible_uploads vu ON vu.upload_id = cd.upload_id
+            ),
+            email_dups AS (
+                SELECT upload_id,
+                       SUM(cnt - 1) AS dup_records,
+                       COUNT(*)     AS grp_count
+                FROM (
+                    SELECT upload_id, email, COUNT(*) AS cnt
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                      AND :match_type IN ('all','email')
+                    GROUP BY upload_id, email HAVING COUNT(*) > 1
+                ) x GROUP BY upload_id
+            ),
+            phone_dups AS (
+                SELECT upload_id,
+                       SUM(cnt - 1) AS dup_records,
+                       COUNT(*)     AS grp_count
+                FROM (
+                    SELECT upload_id, phone, COUNT(*) AS cnt
+                    FROM normalized
+                    WHERE phone IS NOT NULL AND phone != ''
+                      AND :match_type IN ('all','phone')
+                    GROUP BY upload_id, phone HAVING COUNT(*) > 1
+                ) x GROUP BY upload_id
+            ),
+            merged_dups AS (
+                SELECT upload_id,
+                       SUM(cnt - 1) AS dup_records,
+                       COUNT(*)     AS grp_count
+                FROM (
+                    SELECT upload_id, email, phone, COUNT(*) AS cnt
+                    FROM normalized
+                    WHERE email IS NOT NULL AND email != ''
+                      AND phone IS NOT NULL AND phone != ''
+                      AND :match_type IN ('all','merged')
+                    GROUP BY upload_id, email, phone HAVING COUNT(*) > 1
+                ) x GROUP BY upload_id
+            ),
+            file_stats AS (
+                SELECT
+                    n.upload_id, n.filename, n.category_name, n.uploader_email,
+                    n.total_records,
+                    COALESCE(ed.dup_records,0)+COALESCE(pd.dup_records,0)+COALESCE(md.dup_records,0) AS total_dup_records,
+                    COALESCE(ed.grp_count,0)+COALESCE(pd.grp_count,0)+COALESCE(md.grp_count,0)      AS total_groups
+                FROM (SELECT DISTINCT upload_id,filename,category_name,uploader_email,total_records FROM normalized) n
+                LEFT JOIN email_dups  ed ON ed.upload_id = n.upload_id
+                LEFT JOIN phone_dups  pd ON pd.upload_id = n.upload_id
+                LEFT JOIN merged_dups md ON md.upload_id = n.upload_id
+                WHERE COALESCE(ed.dup_records,0)+COALESCE(pd.dup_records,0)+COALESCE(md.dup_records,0) > 0
+            )
+            SELECT *, COUNT(*) OVER() AS grand_total
+            FROM file_stats
+            {order_sql}
+            LIMIT :limit OFFSET :offset
+        """), {**filter_params, "match_type": match_type,
+               "limit": page_size, "offset": offset}).fetchall()
+
+    total = rows[0].grand_total if rows else 0
+
+    return {
+        "total_files": int(total),
+        "page": page,
+        "page_size": page_size,
+        "files": [
+            {
+                "upload_id":     r.upload_id,
+                "filename":      r.filename,
+                "category":      r.category_name,
+                "uploader":      r.uploader_email,
+                "total_records": r.total_records,
+                "dup_records":   r.total_dup_records,
+                "group_count":   r.total_groups,
+            }
+            for r in rows
+        ]
+    }
+
+@app.get("/related-all.html")
+def serve_related_all():
+    return FileResponse(os.path.join("..", "frontend", "related-all.html"))
 
 @app.get("/header.html")
 def serve_header():

@@ -329,11 +329,13 @@ async function loadCategories() {
     categoriesCache = cats;
 
     if (categorySelect) {
+        const previousValue = categorySelect.value; // save before rebuild
         categorySelect.innerHTML = `<option value="" disabled selected>— Select a category —</option>`;
         cats.forEach(c => {
             const displayName = c.name.length > 35 ? c.name.substring(0, 33) + '…' : c.name;
             categorySelect.innerHTML += `<option value="${c.id}" title="${c.name}">${displayName}</option>`;
         });
+        if (previousValue) categorySelect.value = previousValue; // restore after rebuild
     }
 
     if (currentUser && currentUser.role !== "admin") {
@@ -723,6 +725,7 @@ async function loadUser() {
     const divider        = document.querySelector(".divider");
     const dashBtn        = document.getElementById("dashboardBtn");
     const label          = document.getElementById("sidebarSectionLabel");
+    const relatedAllBtn = document.getElementById("relatedAllBtn");
 
     if (currentUser.role === "admin") {
         if (label)          label.textContent          = "Users";
