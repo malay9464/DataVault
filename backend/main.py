@@ -176,16 +176,22 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if email_cols:
         df["email"] = df[email_cols[0]].astype(str).str.strip().str.lower()
         df["email"] = df["email"].where(df[email_cols[0]].notna(), None)
+        df["email"] = df["email"].where(df["email"] != "nan", None)
+        df["email"] = df["email"].where(df["email"] != "", None)
 
     if phone_cols:
         df["phone"] = df[phone_cols[0]].astype(str).str.replace(
             r"[^\d]", "", regex=True
         )
         df["phone"] = df["phone"].where(df[phone_cols[0]].notna(), None)
+        df["phone"] = df["phone"].where(df["phone"] != "nan", None)
+        df["phone"] = df["phone"].where(df["phone"] != "", None)
 
     if name_cols:
         df["name"] = df[name_cols[0]].astype(str).str.strip().str.lower()
         df["name"] = df["name"].where(df[name_cols[0]].notna(), None)
+        df["name"] = df["name"].where(df["name"] != "nan", None)
+        df["name"] = df["name"].where(df["name"] != "", None)
 
     columns_to_drop = set(email_cols + phone_cols + name_cols)
     columns_to_drop.discard("email")
