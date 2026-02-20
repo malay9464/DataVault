@@ -896,9 +896,7 @@ function renderTable() {
             if (rawDup >= 1000) dupAttr = `data-full-number="${fmtNumFull(rawDup)}"`;
         }
 
-        let viewBtn = isProcessing
-            ? `<button class="btn-view disabled" disabled title="File is still processing...">⏳ Processing</button>`
-            : `<button class="btn-view" onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'">View</button>`;
+        let viewBtn = "";
 
         const deleteBtn = `<button class="btn-delete ${canDelete ? '' : 'disabled'}"
             ${canDelete ? `onclick="del(${r.upload_id})"` : 'disabled'}>Delete</button>`;
@@ -925,7 +923,11 @@ function renderTable() {
                 <div style="display:flex;align-items:center;gap:8px;">
                     ${canMove ? `<span class="drag-handle" title="Drag to move">⠿</span>` : ''}
                     <span style="font-size:18px;flex-shrink:0;">📄</span>
-                    <strong style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;">${r.filename}</strong>
+                    ${isProcessing
+                        ? `<strong style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;">${r.filename}</strong>`
+                        : `<strong onclick="location.href='/preview.html?upload_id=${r.upload_id}&from_page=${page}&from_filter=${currentFilter}'"
+                            style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;cursor:pointer;color:#2563eb;text-decoration:underline;">${r.filename}</strong>`
+                    }
                 </div>
             </td>
             ${categoryCell}
