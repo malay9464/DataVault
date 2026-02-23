@@ -98,14 +98,14 @@ function updateFilePreview() {
         uploadBox.style.borderColor = "";
         uploadBox.style.background = "";
     } else {
-        container.style.display = "grid";
+        container.style.display = "flex";
         container.innerHTML = selectedFiles.map((file, index) => `
-            <div class="file-preview-item">
-                <button type="button" class="file-preview-item-remove" onclick="removeFile(${index})" title="Remove file">×</button>
-                <div class="file-preview-item-icon">📄</div>
-                <div class="file-preview-item-name">${file.name}</div>
-                <div class="file-preview-item-size">${(file.size / 1024 / 1024).toFixed(2)} MB • ${file.name.split('.').pop().toUpperCase()}</div>
-            </div>
+        <div class="file-preview-item">
+            <button type="button" class="file-preview-item-remove" onclick="removeFile(${index})" title="Remove">×</button>
+            <div class="file-preview-item-icon">📄</div>
+            <div class="file-preview-item-name" title="${file.name}">${file.name}</div>
+            <div class="file-preview-item-size">${(file.size / 1024 / 1024).toFixed(2)} MB • ${file.name.split('.').pop().toUpperCase()}</div>
+        </div>
         `).join("");
         uploadBox.style.borderColor = "#16a34a";
         uploadBox.style.background = "#f0fdf4";
