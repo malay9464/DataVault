@@ -35,7 +35,7 @@ def build_cache_for_upload(conn, upload_id: int):
         WHERE upload_id = :uid
           AND NULLIF(LOWER(TRIM(row_data->>'email')), 'nan') IS NOT NULL
         GROUP BY 2
-        HAVING COUNT(*) > 1
+        HAVING COUNT(*) >= 1
     """), {"uid": upload_id})
 
     # PHONE groups
@@ -55,7 +55,7 @@ def build_cache_for_upload(conn, upload_id: int):
           AND NULLIF(REGEXP_REPLACE(
                 COALESCE(row_data->>'phone',''), '[^0-9]','','g'), '') IS NOT NULL
         GROUP BY 2
-        HAVING COUNT(*) > 1
+        HAVING COUNT(*) >= 1
     """), {"uid": upload_id})
 
     # MERGED groups
@@ -78,7 +78,7 @@ def build_cache_for_upload(conn, upload_id: int):
           AND NULLIF(REGEXP_REPLACE(
                 COALESCE(row_data->>'phone',''), '[^0-9]','','g'), '') IS NOT NULL
         GROUP BY 2
-        HAVING COUNT(*) > 1
+        HAVING COUNT(*) >= 1
     """), {"uid": upload_id})
 
     conn.commit()

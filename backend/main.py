@@ -504,10 +504,6 @@ async def upload_file(
         "message": "File queued for processing"
     }
 
-# ═══════════════════════════════════════════════════════════════════
-# ADD THIS FUNCTION anywhere in main.py (e.g. just above _process_file_background)
-# ═══════════════════════════════════════════════════════════════════
-
 def _build_cache_for_upload(upload_id: int):
     """
     Computes duplicate groups for one upload and stores in related_groups_cache.
@@ -531,7 +527,7 @@ def _build_cache_for_upload(upload_id: int):
             WHERE upload_id = :uid
               AND NULLIF(LOWER(TRIM(row_data->>'email')), 'nan') IS NOT NULL
             GROUP BY 2
-            HAVING COUNT(*) > 1
+            HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
         # PHONE
@@ -546,7 +542,7 @@ def _build_cache_for_upload(upload_id: int):
             WHERE upload_id = :uid
               AND NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),'') IS NOT NULL
             GROUP BY 2
-            HAVING COUNT(*) > 1
+            HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
         # MERGED
@@ -564,7 +560,7 @@ def _build_cache_for_upload(upload_id: int):
               AND NULLIF(LOWER(TRIM(row_data->>'email')),'nan') IS NOT NULL
               AND NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),'') IS NOT NULL
             GROUP BY 2
-            HAVING COUNT(*) > 1
+            HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
         conn.commit()
@@ -2258,35 +2254,16 @@ def related_grouped_stats(
         "both_records": stats.both_records
     }
 
-# ═══════════════════════════════════════════════════════════════════
-# In main.py — update BOTH /related-grouped-all AND /related-all-stats
-# to support category_id filtering (for regular users)
-# AND change LIMIT 5 for preview records (instead of 50)
-# ═══════════════════════════════════════════════════════════════════
-
-# In /related-grouped-all signature, add:
-#     category_id: int | None = None,
-# 
-# Then in the upload_filters block, add after the existing filters:
-#
-#     if category_id:
-#         upload_filters.append("ul.category_id = :cat_id")
-#         filter_params["cat_id"] = category_id
-#
-# And change the records fetch LIMIT from 50 to 5:
-#     LIMIT 5    ← was LIMIT 50
-
-# ── COMPLETE UPDATED /related-grouped-all ──────────────────────────
-
 @app.get("/related-grouped-all")
 def related_grouped_all(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    match_type: str = Query("all", regex="^(all|email|phone|merged)$"),
-    sort: str = Query("size-desc", regex="^(size-desc|size-asc|alpha)$"),
+    match_type: str = Query("all", pattern="^(all|email|phone|merged)$"),
+    sort: str = Query("size-desc", pattern="^(size-desc|size-asc|alpha)$"),
     upload_id: int | None = None,
     user_id: int | None = None,
     category_id: int | None = None,
+    search: str | None = None,
     user: dict = Depends(get_current_user)
 ):
     if sort == "size-desc":
@@ -2315,6 +2292,9 @@ def related_grouped_all(
         upload_filters.append("ul.category_id = :cat_id")
         filter_params["cat_id"] = category_id
 
+    # ── ALWAYS set these — never inside an if block ──
+    search_like = f"%{search}%" if search else None
+
     upload_filter_sql = " AND ".join(upload_filters)
 
     with engine.connect() as conn:
@@ -2338,6 +2318,7 @@ def related_grouped_all(
                 FROM related_groups_cache rgc
                 JOIN visible v ON v.upload_id = rgc.upload_id
                 WHERE (:match_type = 'all' OR rgc.match_type = :match_type)
+                  AND (:search_like IS NULL OR rgc.group_key ILIKE :search_like)
                 GROUP BY rgc.group_key, rgc.match_type
                 HAVING COUNT(DISTINCT rgc.upload_id) > 1
             ),
@@ -2350,7 +2331,7 @@ def related_grouped_all(
             FROM ranked
             WHERE rn BETWEEN :offset + 1 AND :offset + :limit
             {order_clause}
-        """), {**filter_params, "match_type": match_type,
+        """), {**filter_params, "match_type": match_type, "search_like": search_like,
                "offset": offset, "limit": page_size}).fetchall()
 
         total = conn.execute(text(f"""
@@ -2363,10 +2344,11 @@ def related_grouped_all(
                 FROM related_groups_cache rgc
                 JOIN visible v ON v.upload_id = rgc.upload_id
                 WHERE (:match_type = 'all' OR rgc.match_type = :match_type)
+                  AND (:search_like IS NULL OR rgc.group_key ILIKE :search_like)
                 GROUP BY rgc.group_key, rgc.match_type
                 HAVING COUNT(DISTINCT rgc.upload_id) > 1
             ) x
-        """), {**filter_params, "match_type": match_type}).scalar() or 0
+        """), {**filter_params, "match_type": match_type, "search_like": search_like}).scalar() or 0
 
         visible_ids = [
             r.upload_id for r in conn.execute(
@@ -2406,7 +2388,6 @@ def related_grouped_all(
                         where_clause = "FALSE"
                         rec_params = {}
 
-                # Only fetch 5 preview records — rest loaded on demand via /related-group-records
                 records = conn.execute(text(f"""
                     SELECT cd.id, cd.upload_id, cd.row_data,
                            ul.filename, c.name AS category_name

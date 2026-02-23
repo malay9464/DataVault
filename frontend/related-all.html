@@ -41,49 +41,47 @@
 
     <!-- CONTROLS -->
     <div class="controls">
-        <!-- FILE filter (all users) -->
         <div class="fg">
             <span class="fl">File</span>
             <select class="fs" id="fUp" style="min-width:210px;"><option value="">All Files</option></select>
         </div>
 
-        <!-- CATEGORY filter (regular users only) -->
         <div class="fg" id="categoryWrap" style="display:none;">
             <span class="fl">Category</span>
             <select class="fs" id="fCat" style="min-width:190px;"><option value="">All Categories</option></select>
         </div>
 
-        <!-- USER filter (admin only) -->
         <div class="fg" id="adminWrap" style="display:none;">
             <span class="fl">User</span>
             <select class="fs" id="fUsr" style="min-width:190px;" onchange="loadFiles()"><option value="">All Users</option></select>
         </div>
 
         <div class="cdiv"></div>
-        <div class="fg">
-            <span class="fl">View</span>
-            <div class="view-toggle">
-                <button class="vbtn active" id="vKey" onclick="setView('key')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                    By Match Key
-                </button>
-                <button class="vbtn" id="vFile" onclick="setView('file')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                    By File
-                </button>
-            </div>
-        </div>
+
         <div class="factions">
             <button class="btn-a" onclick="applyFilters()">Apply</button>
             <button class="btn-r" onclick="resetFilters()">Reset</button>
         </div>
     </div>
 
+    <!-- SEARCH BAR -->
+    <div class="search-bar">
+        <div class="search-input-wrap">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" class="search-input" placeholder="Search by email or phone number…" oninput="onSearch(this.value)">
+            <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none;">✕</button>
+        </div>
+        <button class="export-btn" id="exportBtn" onclick="exportCSV()" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+        </button>
+    </div>
+
     <!-- TABS -->
     <div class="tabs">
-        <button class="tab active" data-t="all"    onclick="setTab('all',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>All <span class="tbadge" id="tAll">—</span></button>
-        <button class="tab" data-t="email"  onclick="setTab('email',this)">📧 Email Only <span class="tbadge" id="tEmail">—</span></button>
-        <button class="tab" data-t="phone"  onclick="setTab('phone',this)">📱 Phone Only <span class="tbadge" id="tPhone">—</span></button>
+        <button class="tab active" data-t="all" onclick="setTab('all',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>All <span class="tbadge" id="tAll">—</span></button>
+        <button class="tab" data-t="email" onclick="setTab('email',this)">📧 Email Only <span class="tbadge" id="tEmail">—</span></button>
+        <button class="tab" data-t="phone" onclick="setTab('phone',this)">📱 Phone Only <span class="tbadge" id="tPhone">—</span></button>
         <button class="tab" data-t="merged" onclick="setTab('merged',this)">🔗 Both <span class="tbadge" id="tMerged">—</span></button>
     </div>
 
@@ -102,7 +100,6 @@
 </div>
 
 <div id="tc"></div>
-
 <script src="/static/js/related-all.js"></script>
 </body>
 </html>
