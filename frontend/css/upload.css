@@ -500,13 +500,19 @@ body {
   pointer-events: none;
 }
 
+.upload-flex-container {
+  display: flex;
+  flex-direction: column;   /* ← was: grid / row */
+  gap: 20px;
+  align-items: stretch;
+}
+
 .upload-box {
   border: 2px dashed var(--primary-light);
   padding: 48px 32px;
   text-align: center;
   cursor: pointer;
   border-radius: var(--radius-lg);
-  margin: 0 0 20px;
   background: var(--bg-surface);
   transition: all var(--transition-smooth);
   position: relative;
@@ -582,9 +588,77 @@ body {
   font-size: 24px;
 }
 
+.file-preview-container {
+  display: flex;             /* ← was: grid */
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-height: none;          /* ← remove height restriction */
+  overflow-y: visible;
+  padding: 6px;
+}
+
+.file-preview-item {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.file-preview-item:hover {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.3);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.1);
+}
+
+.file-preview-item-icon {
+  grid-row: span 2;
+  font-size: 18px;
+}
+
+.file-preview-item-name {
+  font-weight: 600;
+  color: #1e40af;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.file-preview-item-size {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.file-preview-item-remove {
+  grid-row: span 2;
+  background: #ef4444;
+  color: white;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.file-preview-item-remove:hover {
+  background: #dc2626;
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.file-preview-item-remove:active {
+  transform: scale(0.95);
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.upload-files-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .upload-btn {
@@ -617,7 +691,7 @@ body {
 }
 
 .upload-progress {
-  margin-top: 16px;
+  margin-top: 0;
   animation: slideDown 0.3s ease;
 }
 

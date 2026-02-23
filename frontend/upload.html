@@ -190,40 +190,43 @@
                                 </select>
                             </div>
 
-                            <div class="upload-box" id="uploadBox" onclick="fileInput.click()">
-                                <div class="upload-icon">
-                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-                                    </svg>
+                            <div class="upload-flex-container">
+                                <div class="upload-box" id="uploadBox" onclick="fileInput.click()">
+                                    <div class="upload-icon">
+                                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                        </svg>
+                                    </div>
+                                    <div class="upload-text">
+                                        <strong>Click to select files</strong>
+                                        <span>or drag and drop (up to 5 files)</span>
+                                    </div>
+                                    <div class="file-types">
+                                        <span class="file-type-badge">.CSV</span>
+                                        <span class="file-type-badge">.XLS</span>
+                                        <span class="file-type-badge">.XLSX</span>
+                                    </div>
                                 </div>
-                                <div class="upload-text">
-                                    <strong>Click to select file</strong>
-                                    <span>or drag and drop</span>
+
+                                <div class="upload-files-panel">
+                                    <div id="fileNameContainer" class="file-preview-container" style="display:none;"></div>
+                                    <div id="uploadProgress" class="upload-progress" style="display:none;">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" id="progressFill"></div>
+                                        </div>
+                                        <div class="progress-text" id="progressText">Uploading...</div>
+                                    </div>
+                                    <button id="uploadBtn" onclick="upload()" class="upload-btn" disabled>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5-5 5 5M12 5v12"/>
+                                        </svg>
+                                        Upload Files
+                                        <span id="uploadSpinner" class="spinner" style="display:none;"></span>
+                                    </button>
                                 </div>
-                                <div class="file-types">
-                                    <span class="file-type-badge">.CSV</span>
-                                    <span class="file-type-badge">.XLS</span>
-                                    <span class="file-type-badge">.XLSX</span>
-                                </div>
-                                <div id="fileName" class="file-preview" style="display:none;"></div>
                             </div>
 
-                            <input type="file" id="fileInput" hidden accept=".csv,.xls,.xlsx">
-
-                            <button id="uploadBtn" onclick="upload()" class="upload-btn" disabled>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5-5 5 5M12 5v12"/>
-                                </svg>
-                                Upload File
-                                <span id="uploadSpinner" class="spinner" style="display:none;"></span>
-                            </button>
-
-                            <div id="uploadProgress" class="upload-progress" style="display:none;">
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="progressFill"></div>
-                                </div>
-                                <div class="progress-text" id="progressText">Uploading...</div>
-                            </div>
+                            <input type="file" id="fileInput" hidden accept=".csv,.xls,.xlsx" multiple>
                         </div>
                     </div>
                 </div>

@@ -9,13 +9,14 @@ const urlParams = new URLSearchParams(window.location.search);
 let page = parseInt(urlParams.get("page")) || 1;
 let currentFilter = urlParams.get("filter") || "all";
 let currentUser = null;
-let selectedFile = null;
+let selectedFiles = []; // Changed to array for multiple files
 let categoriesCache = [];
 let allUploads = [];
 let filteredUploads = [];
 let selectedUserId = null;
 let selectedCategoryId = null;
 const PAGE_SIZE = 10;
+const MAX_FILES = 5; // Limit to 5 files
 
 // Bulk delete state
 let selectedUploadIds = new Set();
@@ -26,7 +27,7 @@ let dragCurrentCategoryId = null;
 
 // DOM Elements
 const fileInput = document.getElementById("fileInput");
-const fileName = document.getElementById("fileName");
+const fileNameContainer = document.getElementById("fileNameContainer");
 const uploadBox = document.getElementById("uploadBox");
 const categoryList = document.getElementById("categoryList");
 const categorySelect = document.getElementById("categorySelect");
@@ -86,29 +87,46 @@ document.head.appendChild(style);
 // ─── UPLOAD READINESS ─────────────────────────────────────────────────────────
 function checkUploadReady() {
     const btn = document.getElementById("uploadBtn");
-    if (btn) btn.disabled = !(selectedFile && categorySelect && categorySelect.value);
+    if (btn) btn.disabled = !(selectedFiles.length > 0 && categorySelect && categorySelect.value);
+}
+
+function updateFilePreview() {
+    const container = fileNameContainer;
+    if (selectedFiles.length === 0) {
+        container.innerHTML = "";
+        container.style.display = "none";
+        uploadBox.style.borderColor = "";
+        uploadBox.style.background = "";
+    } else {
+        container.style.display = "grid";
+        container.innerHTML = selectedFiles.map((file, index) => `
+            <div class="file-preview-item">
+                <button type="button" class="file-preview-item-remove" onclick="removeFile(${index})" title="Remove file">×</button>
+                <div class="file-preview-item-icon">📄</div>
+                <div class="file-preview-item-name">${file.name}</div>
+                <div class="file-preview-item-size">${(file.size / 1024 / 1024).toFixed(2)} MB • ${file.name.split('.').pop().toUpperCase()}</div>
+            </div>
+        `).join("");
+        uploadBox.style.borderColor = "#16a34a";
+        uploadBox.style.background = "#f0fdf4";
+    }
+    checkUploadReady();
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    updateFilePreview();
 }
 
 fileInput.onchange = () => {
-    selectedFile = fileInput.files[0];
-    if (selectedFile) {
-        const fileSize = (selectedFile.size / 1024 / 1024).toFixed(2);
-        const fileType = selectedFile.name.split('.').pop().toUpperCase();
-        fileName.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:4px;text-align:left;">
-                <div style="font-weight:600;color:#1e40af;">${selectedFile.name}</div>
-                <div style="font-size:12px;color:#64748b;">${fileSize} MB • ${fileType} Format</div>
-            </div>`;
-        fileName.style.display = "flex";
-        uploadBox.style.borderColor = "#16a34a";
-        uploadBox.style.background = "#f0fdf4";
-    } else {
-        fileName.innerText = "";
-        fileName.style.display = "none";
-        uploadBox.style.borderColor = "";
-        uploadBox.style.background = "";
+    const files = Array.from(fileInput.files);
+    // Limit to max 5 files
+    if (files.length > MAX_FILES) {
+        showToast(`Maximum ${MAX_FILES} files allowed. Selected ${files.length}. Only first ${MAX_FILES} will be used.`, "warn", 5000);
+        files.splice(MAX_FILES);
     }
-    checkUploadReady();
+    selectedFiles = files;
+    updateFilePreview();
 };
 
 if (categorySelect) categorySelect.addEventListener("change", checkUploadReady);
@@ -132,8 +150,16 @@ if (uploadBox) {
         uploadBox.style.transform = "";
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            fileInput.files = files;
-            fileInput.dispatchEvent(new Event("change"));
+            // Add dropped files to existing selected files (but respect max limit)
+            let filesToAdd = Array.from(files);
+            const totalFiles = selectedFiles.length + filesToAdd.length;
+            if (totalFiles > MAX_FILES) {
+                const allowedCount = MAX_FILES - selectedFiles.length;
+                showToast(`Can only add ${allowedCount} more file(s). Maximum is ${MAX_FILES}.`, "warn", 4000);
+                filesToAdd = filesToAdd.slice(0, allowedCount);
+            }
+            selectedFiles = [...selectedFiles, ...filesToAdd];
+            updateFilePreview();
         }
     });
 }
@@ -528,92 +554,125 @@ function resetSearch() {
 
 // ─── UPLOAD ───────────────────────────────────────────────────────────────────
 async function upload() {
-    if (!selectedFile) { showToast("Please select a file", "warn"); return; }
+    if (selectedFiles.length === 0) { showToast("Please select at least one file", "warn"); return; }
     if (!categorySelect.value) { showToast("Please select a category", "warn"); return; }
 
     const btn = document.getElementById("uploadBtn");
     const spinner = document.getElementById("uploadSpinner");
     btn.disabled = true;
     spinner.style.display = "inline-block";
-    uploadProgress.style.display = "block";
     fileInput.disabled = true;
     uploadBox.classList.add("disabled");
-    progressFill.style.width = "0%";
-    progressText.textContent = "Starting...";
 
-    const uploadId = Date.now() * 1000;
-    const sseUrl = `/upload-progress/${uploadId}?token=${localStorage.getItem("access_token")}`;
-    const eventSource = new EventSource(sseUrl);
+    let successCount = 0;
+    let failureCount = 0;
+    const failedFiles = [];
 
-    eventSource.onmessage = (e) => {
-        try {
-            const data = JSON.parse(e.data);
-            const pct = data.percent || 0;
-            progressFill.style.width = pct + "%";
-            progressText.textContent = data.message || `${pct}%`;
-            if (data.status === "done") { progressFill.style.width = "100%"; eventSource.close(); }
-            if (data.status === "error") {
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        uploadProgress.style.display = "block";
+        progressFill.style.width = "0%";
+        progressText.textContent = `Uploading file ${i + 1}/${selectedFiles.length}: ${file.name}`;
+
+        const uploadId = Date.now() * 1000 + i; // Unique ID for each file
+        const sseUrl = `/upload-progress/${uploadId}?token=${localStorage.getItem("access_token")}`;
+        const eventSource = new EventSource(sseUrl);
+
+        const uploadSuccess = await new Promise((resolve) => {
+            eventSource.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    const pct = data.percent || 0;
+                    progressFill.style.width = pct + "%";
+                    progressText.textContent = `Uploading file ${i + 1}/${selectedFiles.length}: ${file.name} (${pct}%)`;
+                    if (data.status === "done") {
+                        progressFill.style.width = "100%";
+                        eventSource.close();
+                    }
+                    if (data.status === "error") {
+                        eventSource.close();
+                        resolve(false);
+                    }
+                } catch (err) { console.error("SSE parse error:", err); }
+            };
+            eventSource.onerror = () => {
                 eventSource.close();
-                showToast(data.message || "Upload failed", "error");
-                uploadProgress.style.display = "none";
-                resetUploadState();
-            }
-        } catch (err) { console.error("SSE parse error:", err); }
-    };
-    eventSource.onerror = () => { eventSource.close(); };
+                resolve(false);
+            };
 
-    try {
-        const fd = new FormData();
-        fd.append("file", selectedFile);
-        const res = await authFetch(
-            `/upload?category_id=${categorySelect.value}&upload_id_hint=${uploadId}`,
-            { method: "POST", body: fd }
-        );
-        eventSource.close();
+            // Send file
+            (async () => {
+                try {
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    const res = await authFetch(
+                        `/upload?category_id=${categorySelect.value}&upload_id_hint=${uploadId}`,
+                        { method: "POST", body: fd }
+                    );
+                    eventSource.close();
 
-        if (res.status === 409) {
-            showToast("File already uploaded", "error");
-            uploadProgress.style.display = "none";
-            resetUploadState();
-            return;
-        }
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showToast(err.detail || "Upload failed", "error");
-            uploadProgress.style.display = "none";
-            resetUploadState();
-            return;
-        }
+                    if (res.status === 409) {
+                        failedFiles.push(`${file.name} (already uploaded)`);
+                        failureCount++;
+                        resolve(false);
+                        return;
+                    }
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        failedFiles.push(`${file.name} (${err.detail || "unknown error"})`);
+                        failureCount++;
+                        resolve(false);
+                        return;
+                    }
 
-        const result = await res.json();
-        if (result.success === false && result.status === 'pending_headers') {
-            showToast("Headers need review. Redirecting...", "warn", 2000);
-            uploadProgress.style.display = "none";
-            setTimeout(() => { window.location.href = `/header.html?upload_id=${result.upload_id}`; }, 2000);
-            return;
-        }
-        if (result.success) {
-            showToast("File uploaded! Processing in background... ⏳", "success");
-            uploadProgress.style.display = "none";
-            progressFill.style.width = "0%";
-            clearUploadFields();
-            loadCategories();
-            loadUploads();
-            if (result.status === "processing") {
-                pollUploadStatus(result.upload_id);
-            }
-        }
-    } catch (err) {
-        eventSource.close();
-        showToast("Network error", "error");
-        uploadProgress.style.display = "none";
-        resetUploadState();
-    } finally {
-        spinner.style.display = "none";
-        fileInput.disabled = false;
-        uploadBox.classList.remove("disabled");
-        checkUploadReady();
+                    const result = await res.json();
+                    if (result.success === false && result.status === 'pending_headers') {
+                        showToast(`⚠️ File ${file.name} needs header review. Redirecting...`, "warn", 2000);
+                        uploadProgress.style.display = "none";
+                        setTimeout(() => { window.location.href = `/header.html?upload_id=${result.upload_id}`; }, 2000);
+                        resolve(true);
+                        return;
+                    }
+                    if (result.success) {
+                        successCount++;
+                        if (result.status === "processing") {
+                            pollUploadStatus(result.upload_id);
+                        }
+                        resolve(true);
+                    } else {
+                        failureCount++;
+                        resolve(false);
+                    }
+                } catch (err) {
+                    eventSource.close();
+                    failedFiles.push(`${file.name} (network error)`);
+                    failureCount++;
+                    resolve(false);
+                }
+            })();
+        });
     }
+
+    uploadProgress.style.display = "none";
+    progressFill.style.width = "0%";
+
+    // Show summary
+    if (successCount > 0 && failureCount === 0) {
+        showToast(`✅ All ${successCount} file(s) uploaded! Processing in background... ⏳`, "success", 4000);
+    } else if (successCount > 0) {
+        showToast(`✅ ${successCount} file(s) uploaded. ❌ ${failureCount} failed:\n${failedFiles.join("\n")}`, "warn", 5000);
+    } else {
+        showToast(`❌ Upload failed for all files.`, "error", 4000);
+    }
+
+    clearUploadFields();
+    loadCategories();
+    loadUploads();
+
+    spinner.style.display = "none";
+    fileInput.disabled = false;
+    uploadBox.classList.remove("disabled");
+    checkUploadReady();
 }
 
 function pollUploadStatus(uploadId) {
@@ -641,10 +700,10 @@ function pollUploadStatus(uploadId) {
 }
 
 function clearUploadFields() {
-    selectedFile = null;
+    selectedFiles = [];
     fileInput.value = "";
-    fileName.innerText = "";
-    fileName.style.display = "none";
+    fileNameContainer.innerHTML = "";
+    fileNameContainer.style.display = "none";
     uploadBox.style.borderColor = "";
     uploadBox.style.background = "";
 }
