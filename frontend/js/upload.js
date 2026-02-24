@@ -120,12 +120,22 @@ function removeFile(index) {
 
 fileInput.onchange = () => {
     const files = Array.from(fileInput.files);
-    // Limit to max 5 files
-    if (files.length > MAX_FILES) {
-        showToast(`Maximum ${MAX_FILES} files allowed. Selected ${files.length}. Only first ${MAX_FILES} will be used.`, "warn", 5000);
-        files.splice(MAX_FILES);
+    const remaining = MAX_FILES - selectedFiles.length;
+
+    if (remaining <= 0) {
+        showToast(`Maximum ${MAX_FILES} files already selected.`, "warn", 4000);
+        fileInput.value = "";
+        return;
     }
-    selectedFiles = files;
+
+    let filesToAdd = files;
+    if (filesToAdd.length > remaining) {
+        showToast(`Can only add ${remaining} more file(s). Maximum is ${MAX_FILES}.`, "warn", 4000);
+        filesToAdd = filesToAdd.slice(0, remaining);
+    }
+
+    selectedFiles = [...selectedFiles, ...filesToAdd];
+    fileInput.value = ""; // Reset so same file can be re-selected if needed
     updateFilePreview();
 };
 
