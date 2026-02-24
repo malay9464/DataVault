@@ -290,7 +290,7 @@ function mkCard(g) {
       ${ftags ? `<div class="ftags">${ftags}</div>` : ""}
       <div class="gbody">
         <div class="rtw">
-          <table class="rtable" data-gkey='${g.raw_key}' data-gtype='${g.match_type}' data-cols='${JSON.stringify(cols)}' data-ff='${ff}' data-recpage='1'>
+          <table class="rtable" data-gkey="${g.raw_key}" data-gtype="${g.match_type}" data-cols="${JSON.stringify(cols).replace(/"/g, "&quot;")}" data-ff="${ff}" data-recpage="1">
             <thead><tr><th>Source File</th>${cols.map(c => `<th>${c.replace(/_/g, " ").toUpperCase()}</th>`).join("")}${adminTH}</tr></thead>
             <tbody>${rowsHTML}${smr}</tbody>
           </table>
