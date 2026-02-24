@@ -1,8 +1,9 @@
 const token = localStorage.getItem("access_token");
 if (!token) window.location.href = "/static/login.html";
 
-let cu = null, tab = "all", page = 1, selUp = "", selUsr = "", selCat = "", searchQ = "";
-const PS = 20;
+let cu = null, tab = "all", view = "key", page = 1, selUsr = "", selCat = "", searchQ = "";
+const PS = 20;  // page size for key view
+const FS = 20;  // page size for file view
 
 async function af(url, o = {}) {
     const r = await fetch(url, { ...o, headers: { ...(o.headers || {}), "Authorization": "Bearer " + token } });
@@ -32,7 +33,6 @@ async function init() {
         document.getElementById("categoryWrap").style.display = "flex";
         await loadCategories();
     }
-    await loadFiles();
     await Promise.all([loadStats(), load()]);
 }
 
@@ -40,25 +40,21 @@ async function loadCategories() {
     const r = await af("/categories"); if (!r.ok) return;
     const cats = await r.json(); const s = document.getElementById("fCat");
     s.innerHTML = '<option value="">All Categories</option>';
-    cats.forEach(c => { const o = document.createElement("option"); o.value = c.id; o.textContent = c.name.length > 45 ? c.name.slice(0, 43) + "…" : c.name; s.appendChild(o); });
+    cats.forEach(c => {
+        const o = document.createElement("option");
+        o.value = c.id;
+        o.textContent = c.name.length > 45 ? c.name.slice(0, 43) + "…" : c.name;
+        s.appendChild(o);
+    });
 }
 
 async function loadUsers() {
     const r = await af("/admin/users-with-stats"); if (!r.ok) return;
     const us = await r.json(); const s = document.getElementById("fUsr");
-    us.filter(u => u.role !== "admin").forEach(u => { const o = document.createElement("option"); o.value = u.id; o.textContent = u.email.length > 40 ? u.email.slice(0, 38) + "…" : u.email; s.appendChild(o); });
-}
-
-async function loadFiles() {
-    let url = "/uploads";
-    const usrVal = document.getElementById("fUsr")?.value || "";
-    if (usrVal) url += "?created_by_user_id=" + usrVal;
-    const r = await af(url); if (!r.ok) return;
-    const us = await r.json(); const s = document.getElementById("fUp");
-    s.innerHTML = '<option value="">All Files</option>';
-    us.filter(u => u.processing_status === "ready").forEach(u => {
-        const o = document.createElement("option"); o.value = u.upload_id;
-        o.textContent = u.filename.length > 55 ? u.filename.slice(0, 53) + "…" : u.filename;
+    us.filter(u => u.role !== "admin").forEach(u => {
+        const o = document.createElement("option");
+        o.value = u.id;
+        o.textContent = u.email.length > 40 ? u.email.slice(0, 38) + "…" : u.email;
         s.appendChild(o);
     });
 }
@@ -79,7 +75,6 @@ async function loadStats() {
 
 function bp(statsOnly = false) {
     const p = new URLSearchParams();
-    if (selUp) p.append("upload_id", selUp);
     if (selUsr) p.append("user_id", selUsr);
     if (selCat) p.append("category_id", selCat);
     if (searchQ) p.append("search", searchQ);
@@ -87,7 +82,7 @@ function bp(statsOnly = false) {
         p.append("match_type", tab);
         p.append("sort", document.getElementById("sortSel").value);
         p.append("page", page);
-        p.append("page_size", PS);
+        p.append("page_size", view === "file" ? FS : PS);
     }
     return p.toString();
 }
@@ -96,12 +91,27 @@ async function load() {
     const area = document.getElementById("content");
     area.innerHTML = `<div class="ldg"><div class="spin"></div><p style="color:#64748b;font-size:14px;">Loading…</p></div>`;
     document.getElementById("pag").innerHTML = "";
-    await loadKeyView(area);
+
+    // Tabs only relevant in key view
+    const tabsRow = document.getElementById("tabsRow");
+    if (tabsRow) tabsRow.style.display = view === "key" ? "flex" : "none";
+
+    // Hide export in file view
+    const expBtn = document.getElementById("exportBtn");
+    if (view === "file" && expBtn) expBtn.style.display = "none";
+
+    if (view === "key") {
+        await loadKeyView(area);
+    } else {
+        await loadFileView(area);
+    }
 }
 
 /* ── SEARCH ── */
 let searchTimer = null;
 function onSearch(val) {
+    const clearBtn = document.getElementById("searchClear");
+    if (clearBtn) clearBtn.style.display = val ? "block" : "none";
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
         searchQ = val.trim();
@@ -112,6 +122,8 @@ function onSearch(val) {
 
 function clearSearch() {
     document.getElementById("searchInput").value = "";
+    const clearBtn = document.getElementById("searchClear");
+    if (clearBtn) clearBtn.style.display = "none";
     searchQ = "";
     page = 1;
     load();
@@ -124,14 +136,12 @@ async function exportCSV() {
     btn.innerHTML = `<div class="spin-sm"></div> Exporting…`;
 
     try {
-        // Fetch all groups across pages (100 at a time to respect server limit)
         let allGroups = [];
         let exportPage = 1;
         const EXPORT_BATCH = 100;
 
         while (true) {
             const p = new URLSearchParams();
-            if (selUp) p.append("upload_id", selUp);
             if (selUsr) p.append("user_id", selUsr);
             if (selCat) p.append("category_id", selCat);
             if (searchQ) p.append("search", searchQ);
@@ -153,19 +163,16 @@ async function exportCSV() {
 
         if (!allGroups.length) { toast("No data to export", "error"); return; }
 
-        // Collect all columns from all groups
         const allCols = new Set();
         allGroups.forEach(g => (g.records || []).forEach(rec => Object.keys(rec.data || {}).forEach(k => allCols.add(k))));
         const cols = [...allCols].filter(c => !c.startsWith("original_") && !c.startsWith("raw_"));
 
-        // Build CSV rows
         const headers = ["Match Type", "Match Key", "Source File", "Category", ...cols];
         const rows = [headers];
 
         btn.innerHTML = `<div class="spin-sm"></div> Fetching records…`;
 
         for (const g of allGroups) {
-            // Fetch all records for this group if there are more than the 5 preview records
             let records = g.records || [];
             if (g.record_count > records.length) {
                 const rp = new URLSearchParams();
@@ -173,7 +180,6 @@ async function exportCSV() {
                 rp.append("match_type", g.match_type);
                 rp.append("page", 1);
                 rp.append("page_size", Math.min(g.record_count, 5000));
-                if (selUp) rp.append("upload_id", selUp);
                 if (selUsr) rp.append("user_id", selUsr);
                 if (selCat) rp.append("category_id", selCat);
                 const rr = await af("/related-group-records?" + rp.toString());
@@ -195,7 +201,6 @@ async function exportCSV() {
             });
         }
 
-        // Convert to CSV string
         const csv = rows.map(r =>
             r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")
         ).join("\n");
@@ -227,7 +232,6 @@ async function loadKeyView(area) {
     const tot = d.total_groups, tp = Math.ceil(tot / PS), st = (page - 1) * PS;
     setRI(tot, st, Math.min(st + PS, tot), "group");
 
-    // Update export button state
     const expBtn = document.getElementById("exportBtn");
     if (expBtn) expBtn.style.display = tot > 0 ? "flex" : "none";
 
@@ -258,9 +262,10 @@ function mkCard(g) {
     const adminTH = cu.role === "admin" ? "<th>Uploader</th>" : "";
     const rowsHTML = recs.slice(0, PREV).map(r => mkRow(r, cols, ff)).join("");
     const remaining = g.record_count - Math.min(PREV, recs.length);
-    const smr = remaining > 0 ? `<tr class="smr-row"><td colspan="${cols.length + 1 + (cu.role === "admin" ? 1 : 0)}"><button class="smr-btn" onclick="expandRows(this)">Show ${Math.min(remaining, 100)} more of ${remaining} remaining ▾</button></td></tr>` : "";
+    const smr = remaining > 0
+        ? `<tr class="smr-row"><td colspan="${cols.length + 1 + (cu.role === "admin" ? 1 : 0)}"><button class="smr-btn" onclick="expandRows(this)">Show ${Math.min(remaining, 100)} more of ${remaining} remaining ▾</button></td></tr>`
+        : "";
 
-    // Highlight search term in match key display
     let displayKey = g.match_key;
     if (searchQ) {
         const escaped = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -315,7 +320,6 @@ async function expandRows(btn) {
     const p = new URLSearchParams();
     p.append("group_key", gkey); p.append("match_type", gtype);
     p.append("page", recPage); p.append("page_size", 100);
-    if (selUp) p.append("upload_id", selUp);
     if (selUsr) p.append("user_id", selUsr);
     const r = await af("/related-group-records?" + p.toString());
     if (!r.ok) { btn.textContent = "Error loading"; btn.disabled = false; return; }
@@ -333,9 +337,48 @@ async function expandRows(btn) {
     }
 }
 
+/* ── BY FILE VIEW ── */
+async function loadFileView(area) {
+    const r = await af("/related-by-file?" + bp());
+    if (!r.ok) { toast("Failed to load", "error"); area.innerHTML = ""; return; }
+    const d = await r.json();
+    const tot = d.total_files, tp = Math.ceil(tot / FS), st = (page - 1) * FS;
+    setRI(tot, st, Math.min(st + FS, tot), "file");
+
+    if (!d.files.length) {
+        area.innerHTML = emptyHTML("No files with related records", "No duplicate contacts found in any file with the current filters.");
+        return;
+    }
+
+    const adminH = cu.role === "admin" ? "<th>Uploaded By</th>" : "";
+    let html = `<div class="ftw"><table class="ftable"><thead><tr><th>File</th>${adminH}<th>Total Records</th><th>Dup Records</th><th>Groups</th><th>Dup Rate</th><th>Actions</th></tr></thead><tbody>`;
+
+    d.files.forEach(f => {
+        const pct = f.total_records > 0 ? Math.round(f.dup_records / f.total_records * 100) : 0;
+        const aCell = cu.role === "admin" ? `<td><span style="font-size:12px;color:#64748b;">👤 ${f.uploader}</span></td>` : "";
+        html += `<tr>
+          <td><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:17px;flex-shrink:0;">📄</span>
+            <div><div style="font-weight:600;font-size:13.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:260px;" title="${f.filename}">${f.filename}</div>
+            <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">${f.category}</div></div></div></td>
+          ${aCell}
+          <td style="font-weight:600;">${fmt(f.total_records)}</td>
+          <td style="font-weight:600;color:#dc2626;">${fmt(f.dup_records)}</td>
+          <td><span style="background:#ede9fe;color:#6d28d9;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${fmt(f.group_count)}</span></td>
+          <td><div class="dbw"><div class="dbb"><div class="dbf" style="width:${Math.min(pct, 100)}%;"></div></div><span class="dpct">${pct}%</span></div></td>
+          <td><a class="vfbtn" href="/related.html?upload_id=${f.upload_id}" target="_blank">View File →</a></td>
+        </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    area.innerHTML = html;
+    renderPag(tp);
+}
+
 /* ── UTILS ── */
 function setRI(tot, st, en, unit) {
-    const txt = tot === 0 ? (searchQ ? `No results for "${searchQ}"` : `No ${unit}s found`) : `Showing ${st + 1}–${en} of ${tot.toLocaleString()} ${unit}${tot !== 1 ? "s" : ""}`;
+    const txt = tot === 0
+        ? (searchQ ? `No results for "${searchQ}"` : `No ${unit}s found`)
+        : `Showing ${st + 1}–${en} of ${tot.toLocaleString()} ${unit}${tot !== 1 ? "s" : ""}`;
     document.getElementById("ri").textContent = txt;
 }
 
@@ -343,24 +386,37 @@ function emptyHTML(h, p) {
     return `<div class="empty"><svg width="68" height="68" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><h3>${h}</h3><p>${p}</p></div>`;
 }
 
-function setTab(t, el) { tab = t; page = 1; document.querySelectorAll(".tab").forEach(b => b.classList.remove("active")); el.classList.add("active"); load(); }
+function setView(v) {
+    view = v; page = 1;
+    document.getElementById("vKey").classList.toggle("active", v === "key");
+    document.getElementById("vFile").classList.toggle("active", v === "file");
+    load();
+}
+
+function setTab(t, el) {
+    tab = t; page = 1;
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    el.classList.add("active");
+    load();
+}
 
 function applyFilters() {
-    selUp = document.getElementById("fUp").value;
     selUsr = document.getElementById("fUsr")?.value || "";
     selCat = document.getElementById("fCat")?.value || "";
     page = 1; loadStats(); load();
 }
 
 function resetFilters() {
-    document.getElementById("fUp").value = "";
     const fu = document.getElementById("fUsr"); if (fu) fu.value = "";
     const fc = document.getElementById("fCat"); if (fc) fc.value = "";
     const si = document.getElementById("searchInput"); if (si) si.value = "";
+    const sc = document.getElementById("searchClear"); if (sc) sc.style.display = "none";
     document.getElementById("sortSel").value = "size-desc";
-    selUp = ""; selUsr = ""; selCat = ""; searchQ = ""; tab = "all"; page = 1;
+    selUsr = ""; selCat = ""; searchQ = ""; tab = "all"; page = 1; view = "key";
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
     document.querySelector('.tab[data-t="all"]').classList.add("active");
+    document.getElementById("vKey").classList.add("active");
+    document.getElementById("vFile").classList.remove("active");
     loadStats(); load();
 }
 
