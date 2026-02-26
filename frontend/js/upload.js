@@ -915,8 +915,8 @@ function renderTable() {
     const pageIds = data.map(r => r.upload_id);
     const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedUploadIds.has(id));
 
-    let header = `<thead><tr>
-        <th style="width:44px; text-align:center;">
+    let html = `<thead><tr>
+        <th style="width:36px; text-align:center; padding:0;">
             <input type="checkbox" id="selectAllCheckbox"
                 ${allPageSelected ? "checked" : ""}
                 onchange="toggleSelectAll(this)"
@@ -927,9 +927,8 @@ function renderTable() {
         <th>Total Records</th>
         <th>Duplicates</th>`;
 
-    if (currentUser.role === "admin") header += `<th>Uploaded By</th>`;
-    header += `<th>Status</th><th>Actions</th></tr></thead><tbody>`;
-    uploadTable.innerHTML = header;
+    if (currentUser.role === "admin") html += `<th>Uploaded By</th>`;
+    html += `<th>Status</th><th>Actions</th></tr></thead><tbody>`;
 
     data.forEach(r => {
         const isProcessing = r.processing_status === 'processing';
@@ -948,7 +947,6 @@ function renderTable() {
         const canDelete = currentUser.role === "admin" || r.created_by_user_id === currentUser.id;
         const canMove   = currentUser.role !== "admin" && !isProcessing;
 
-        // ── TOTAL RECORDS cell — compact number + tooltip with full number ──
         let totalCell, totalAttr = "";
         if (isProcessing) {
             totalCell = '<span class="processing-badge">⏳ Processing...</span>';
@@ -960,7 +958,6 @@ function renderTable() {
             if (raw >= 1000) totalAttr = `data-full-number="${fmtNumFull(raw)}"`;
         }
 
-        // ── DUPLICATES cell — compact number + tooltip ──
         let dupCell = "—", dupAttr = "";
         if (!isProcessing && r.duplicate_records !== null && r.duplicate_records !== undefined) {
             const rawDup = r.duplicate_records;
@@ -968,21 +965,21 @@ function renderTable() {
             if (rawDup >= 1000) dupAttr = `data-full-number="${fmtNumFull(rawDup)}"`;
         }
 
-        let viewBtn = "";
-
         const deleteBtn = `<button class="btn-delete ${canDelete ? '' : 'disabled'}"
             ${canDelete ? `onclick="del(${r.upload_id})"` : 'disabled'}>Delete</button>`;
 
         const adminCol = currentUser.role === "admin" ? `<td>${r.uploaded_by}</td>` : '';
-
         const categoryCell = makeInlineCategoryCell(r.upload_id, r.category_id, r.category, canMove);
 
-        const draggable = canMove ? `draggable="true"
-            ondragstart="onRowDragStart(event, ${r.upload_id}, ${r.category_id})"
-            ondragend="onRowDragEnd(${r.upload_id})"` : '';
+        const draggableAttrs = canMove
+            ? `draggable="true" ondragstart="onRowDragStart(event,${r.upload_id},${r.category_id})" ondragend="onRowDragEnd(${r.upload_id})"`
+            : '';
 
-        uploadTable.innerHTML += `<tr id="row-${r.upload_id}" 
-            class="${isChecked ? 'row-selected' : ''}" ${draggable}>
+        const dragHandle = canMove
+            ? `<span class="drag-handle" title="Drag to move">⠿</span>`
+            : '';
+
+        html += `<tr id="row-${r.upload_id}" class="${isChecked ? 'row-selected' : ''}" ${draggableAttrs}>
             <td style="text-align:center;">
                 <input type="checkbox" class="row-checkbox"
                     data-id="${r.upload_id}"
@@ -993,7 +990,7 @@ function renderTable() {
             </td>
             <td title="${r.filename}">
                 <div style="display:flex;align-items:center;gap:8px;">
-                    ${canMove ? `<span class="drag-handle" title="Drag to move">⠿</span>` : ''}
+                    ${dragHandle}
                     <span style="font-size:18px;flex-shrink:0;">📄</span>
                     ${isProcessing
                         ? `<strong style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;">${r.filename}</strong>`
@@ -1007,11 +1004,12 @@ function renderTable() {
             <td ${dupAttr}>${dupCell}</td>
             ${adminCol}
             <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
-            <td><div class="action-group">${viewBtn}${deleteBtn}</div></td>
+            <td><div class="action-group">${deleteBtn}</div></td>
         </tr>`;
     });
 
-    uploadTable.innerHTML += `</tbody>`;
+    html += `</tbody>`;
+    uploadTable.innerHTML = html;
     renderPagination(totalPages);
     updateBulkBar();
 }

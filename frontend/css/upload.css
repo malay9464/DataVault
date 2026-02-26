@@ -1023,6 +1023,10 @@ td {
   font-size: 14px;
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: clip;
+}
+
+td:not(:first-child):not(:last-child) {
   text-overflow: ellipsis;
 }
 
@@ -1036,7 +1040,7 @@ th:first-child {
 }
 
 table th:nth-child(1),
-table td:nth-child(1) { width: 44px; }
+table td:nth-child(1) { width: 44px; overflow: visible; text-overflow: clip; }
 
 table th:nth-child(2),
 table td:nth-child(2) { width: 28%; text-align: left; }
