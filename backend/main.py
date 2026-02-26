@@ -141,6 +141,29 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [c.strip().lower() for c in df.columns]
     return df
 
+def is_valid_phone(digits: str) -> bool:
+    """Validate a digit-only phone string."""
+    if not digits:
+        return False
+    length = len(digits)
+    # Rule 1: Length 6-25
+    if not (6 <= length <= 25):
+        return False
+    # Rule 2: Not all same digit (0000000, 9999999)
+    if len(set(digits)) == 1:
+        return False
+    # Rule 3: Not all zeros
+    if all(c == '0' for c in digits):
+        return False
+    # Rule 4: Not sequential ascending/descending
+    if digits in ("1234567890", "0123456789", "12345678", "123456789"):
+        return False
+    # Rule 5: Known fake numbers
+    if digits in {"9999999999", "8888888888", "7777777777",
+                  "6666666666", "1234567890", "0000000000"}:
+        return False
+    return True
+
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [
         c.strip().lower().replace(" ", "_").replace("-", "_")
@@ -182,12 +205,27 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["email"] = df["email"].where(df["email"] != "", None)
 
     if phone_cols:
-        df["phone"] = df[phone_cols[0]].astype(str).str.replace(
-            r"[^\d]", "", regex=True
-        )
+        raw = df[phone_cols[0]].astype(str)
+
+        # Split on / or , or ; — explode multiple numbers into separate rows later
+        # For now normalize: strip non-digits per value
+        df["phone"] = raw.str.replace(r"[^\d/,;]", "", regex=True)
         df["phone"] = df["phone"].where(df[phone_cols[0]].notna(), None)
         df["phone"] = df["phone"].where(df["phone"] != "nan", None)
         df["phone"] = df["phone"].where(df["phone"] != "", None)
+
+        # Extract first valid number from compound values like 9858543575/8568523147
+        def extract_best_phone(val):
+            if val is None or not isinstance(val, str):
+                return None
+            parts = [p.strip() for p in val.replace(",", "/").replace(";", "/").split("/")]
+            for p in parts:
+                digits = ''.join(c for c in p if c.isdigit())
+                if is_valid_phone(digits):
+                    return digits
+            return None
+
+        df["phone"] = df["phone"].apply(extract_best_phone)
 
     if name_cols:
         df["name"] = df[name_cols[0]].astype(str).str.strip().str.lower()
@@ -531,17 +569,40 @@ def _build_cache_for_upload(upload_id: int):
         """), {"uid": upload_id})
 
         # PHONE
+        # PHONE — split compound values like 9858543575/8568523147 into individual keys
         conn.execute(text("""
             INSERT INTO related_groups_cache
                 (upload_id, group_key, match_type, record_count, file_count, upload_ids)
-            SELECT
-                :uid,
-                NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),''),
-                'phone', COUNT(*), 1, ARRAY[:uid]
-            FROM cleaned_data
-            WHERE upload_id = :uid
-              AND NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),'') IS NOT NULL
-            GROUP BY 2
+            WITH phone_raw AS (
+                SELECT
+                    id,
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone',''), '[^0-9/,;]', '', 'g') AS raw_phone
+                FROM cleaned_data
+                WHERE upload_id = :uid
+                AND COALESCE(row_data->>'phone','') != ''
+            ),
+            phone_parts AS (
+                SELECT id, TRIM(part) AS digit_phone
+                FROM phone_raw,
+                    UNNEST(STRING_TO_ARRAY(
+                        REGEXP_REPLACE(raw_phone, '[/,;]', '/', 'g'), '/'
+                    )) AS part
+                WHERE LENGTH(TRIM(part)) BETWEEN 6 AND 25
+            ),
+            phone_valid AS (
+                SELECT id, digit_phone
+                FROM phone_parts
+                WHERE LENGTH(digit_phone) BETWEEN 6 AND 25
+                AND digit_phone ~ '^[0-9]+$'
+                AND LENGTH(REGEXP_REPLACE(digit_phone, '(.)\\1+', '', 'g')) > 1
+                AND digit_phone NOT IN (
+                    '9999999999','8888888888','7777777777',
+                    '6666666666','1234567890','0123456789','0000000000'
+                )
+            )
+            SELECT :uid, digit_phone, 'phone', COUNT(*), 1, ARRAY[:uid]
+            FROM phone_valid
+            GROUP BY digit_phone
             HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
