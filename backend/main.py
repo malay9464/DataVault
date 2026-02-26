@@ -576,51 +576,40 @@ def _build_cache_for_upload(upload_id: int):
             HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
+        # PHONE
         conn.execute(text("""
             INSERT INTO related_groups_cache
                 (upload_id, group_key, match_type, record_count, file_count, upload_ids)
-            WITH phone_raw AS (
-                SELECT
-                    id,
-                    REGEXP_REPLACE(COALESCE(row_data->>'phone',''), '[^0-9/,;]', '', 'g') AS raw_phone
-                FROM cleaned_data
-                WHERE upload_id = :uid
-                AND COALESCE(row_data->>'phone','') != ''
-                AND row_data->>'phone' != 'null'
-            ),
-            phone_parts AS (
-                SELECT id, TRIM(part) AS digit_phone
-                FROM phone_raw,
-                    UNNEST(STRING_TO_ARRAY(
-                        REGEXP_REPLACE(raw_phone, '[/,;]', '/', 'g'), '/'
-                    )) AS part
-            ),
-            phone_valid AS (
-                SELECT id, digit_phone
-                FROM phone_parts
-                WHERE LENGTH(digit_phone) BETWEEN 6 AND 25
-                AND digit_phone ~ '^[0-9]+$'
-                AND digit_phone NOT LIKE '00%'
-                AND digit_phone NOT IN (
-                    '9999999999','8888888888','7777777777',
-                    '6666666666','1234567890','0123456789','0000000000'
-                )
-                AND array_length(ARRAY(
-                    SELECT DISTINCT unnest(string_to_array(digit_phone, NULL))
-                ), 1) >= 4
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM (
-                        SELECT chr, COUNT(*) AS cnt
-                        FROM unnest(string_to_array(digit_phone, NULL)) AS chr
-                        GROUP BY chr
-                    ) freq
-                    WHERE freq.cnt::float / LENGTH(digit_phone) > 0.6
-                )
+            SELECT
+                :uid,
+                NULLIF(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'),''),
+                'phone', COUNT(*), 1, ARRAY[:uid]
+            FROM cleaned_data
+            WHERE upload_id = :uid
+            AND LENGTH(REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g')) BETWEEN 6 AND 25
+            AND REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g') NOT LIKE '00%'
+            AND array_length(ARRAY(
+                SELECT DISTINCT unnest(string_to_array(
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'), NULL
+                ))
+            ), 1) >= 4
+            AND NOT EXISTS (
+                SELECT 1 FROM (
+                    SELECT chr, COUNT(*) AS cnt
+                    FROM unnest(string_to_array(
+                        REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g'), NULL
+                    )) AS chr
+                    GROUP BY chr
+                ) freq
+                WHERE freq.cnt::float / NULLIF(LENGTH(
+                    REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g')
+                ), 0) > 0.6
             )
-            SELECT :uid, digit_phone, 'phone', COUNT(*), 1, ARRAY[:uid]
-            FROM phone_valid
-            GROUP BY digit_phone
+            AND REGEXP_REPLACE(COALESCE(row_data->>'phone',''),'[^0-9]','','g') NOT IN (
+                '9999999999','8888888888','7777777777',
+                '6666666666','1234567890','0123456789','0000000000'
+            )
+            GROUP BY 2
             HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
@@ -644,6 +633,28 @@ def _build_cache_for_upload(upload_id: int):
 
         conn.commit()
     print(f"[CACHE] Built groups cache for upload_id={upload_id}")
+
+@app.get("/admin/rebuild-phone-cache")
+def rebuild_phone_cache(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    with engine.begin() as conn:
+        ids = conn.execute(text(
+            "SELECT DISTINCT upload_id FROM upload_log WHERE processing_status = 'ready'"
+        )).fetchall()
+
+    rebuilt = 0
+    failed = 0
+    for row in ids:
+        try:
+            _build_cache_for_upload(row.upload_id)
+            rebuilt += 1
+        except Exception as e:
+            print(f"Failed for {row.upload_id}: {e}")
+            failed += 1
+
+    return {"success": True, "rebuilt": rebuilt, "failed": failed}
 
 def _process_file_background(upload_id: int, queued_file_path: str,
                               original_filename: str):
