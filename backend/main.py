@@ -134,34 +134,49 @@ def assert_upload_access(conn, upload_id: int, user: dict):
     if not can_access_upload(user, owner):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-# ---------------- FIELD NORMALIZATION ----------------
-
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    # standardize column names
     df.columns = [c.strip().lower() for c in df.columns]
     return df
 
 def is_valid_phone(digits: str) -> bool:
-    """Validate a digit-only phone string."""
     if not digits:
         return False
     length = len(digits)
+
     # Rule 1: Length 6-25
     if not (6 <= length <= 25):
         return False
-    # Rule 2: Not all same digit (0000000, 9999999)
+
+    # Rule 2: Not all same digit
     if len(set(digits)) == 1:
         return False
+
     # Rule 3: Not all zeros
     if all(c == '0' for c in digits):
         return False
-    # Rule 4: Not sequential ascending/descending
+
+    # Rule 4: Not sequential
     if digits in ("1234567890", "0123456789", "12345678", "123456789"):
         return False
-    # Rule 5: Known fake numbers
+
+    # Rule 5: Known fake numbers blacklist
     if digits in {"9999999999", "8888888888", "7777777777",
-                  "6666666666", "1234567890", "0000000000"}:
+                  "6666666666", "1234567890", "0123456789", "0000000000", "123456", "12345", "1234567", "12345678"}:
         return False
+
+    # Rule 6: Must have at least 4 unique digits
+    if len(set(digits)) < 4:
+        return False
+
+    # Rule 7: No single digit > 60% frequency
+    for d in set(digits):
+        if digits.count(d) / length > 0.6:
+            return False
+
+    # Rule 8: Must not start with 00
+    if digits.startswith("00"):
+        return False
+
     return True
 
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -197,7 +212,6 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             name_cols = [c]
             break
 
-    # VECTORIZED — no apply(axis=1)
     if email_cols:
         df["email"] = df[email_cols[0]].astype(str).str.strip().str.lower()
         df["email"] = df["email"].where(df[email_cols[0]].notna(), None)
@@ -205,27 +219,21 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df["email"] = df["email"].where(df["email"] != "", None)
 
     if phone_cols:
-        raw = df[phone_cols[0]].astype(str)
-
-        # Split on / or , or ; — explode multiple numbers into separate rows later
-        # For now normalize: strip non-digits per value
-        df["phone"] = raw.str.replace(r"[^\d/,;]", "", regex=True)
-        df["phone"] = df["phone"].where(df[phone_cols[0]].notna(), None)
-        df["phone"] = df["phone"].where(df["phone"] != "nan", None)
-        df["phone"] = df["phone"].where(df["phone"] != "", None)
-
-        # Extract first valid number from compound values like 9858543575/8568523147
         def extract_best_phone(val):
-            if val is None or not isinstance(val, str):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
                 return None
-            parts = [p.strip() for p in val.replace(",", "/").replace(";", "/").split("/")]
+            raw = str(val).strip()
+            if not raw or raw == "nan":
+                return None
+            # Split compound values like 9858543575/8568523147
+            parts = [p.strip() for p in raw.replace(",", "/").replace(";", "/").split("/")]
             for p in parts:
                 digits = ''.join(c for c in p if c.isdigit())
                 if is_valid_phone(digits):
                     return digits
             return None
 
-        df["phone"] = df["phone"].apply(extract_best_phone)
+        df["phone"] = df[phone_cols[0]].apply(extract_best_phone)
 
     if name_cols:
         df["name"] = df[name_cols[0]].astype(str).str.strip().str.lower()
@@ -568,8 +576,6 @@ def _build_cache_for_upload(upload_id: int):
             HAVING COUNT(*) >= 1
         """), {"uid": upload_id})
 
-        # PHONE
-        # PHONE — split compound values like 9858543575/8568523147 into individual keys
         conn.execute(text("""
             INSERT INTO related_groups_cache
                 (upload_id, group_key, match_type, record_count, file_count, upload_ids)
@@ -580,6 +586,7 @@ def _build_cache_for_upload(upload_id: int):
                 FROM cleaned_data
                 WHERE upload_id = :uid
                 AND COALESCE(row_data->>'phone','') != ''
+                AND row_data->>'phone' != 'null'
             ),
             phone_parts AS (
                 SELECT id, TRIM(part) AS digit_phone
@@ -587,17 +594,28 @@ def _build_cache_for_upload(upload_id: int):
                     UNNEST(STRING_TO_ARRAY(
                         REGEXP_REPLACE(raw_phone, '[/,;]', '/', 'g'), '/'
                     )) AS part
-                WHERE LENGTH(TRIM(part)) BETWEEN 6 AND 25
             ),
             phone_valid AS (
                 SELECT id, digit_phone
                 FROM phone_parts
                 WHERE LENGTH(digit_phone) BETWEEN 6 AND 25
                 AND digit_phone ~ '^[0-9]+$'
-                AND LENGTH(REGEXP_REPLACE(digit_phone, '(.)\\1+', '', 'g')) > 1
+                AND digit_phone NOT LIKE '00%'
                 AND digit_phone NOT IN (
                     '9999999999','8888888888','7777777777',
                     '6666666666','1234567890','0123456789','0000000000'
+                )
+                AND array_length(ARRAY(
+                    SELECT DISTINCT unnest(string_to_array(digit_phone, NULL))
+                ), 1) >= 4
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT chr, COUNT(*) AS cnt
+                        FROM unnest(string_to_array(digit_phone, NULL)) AS chr
+                        GROUP BY chr
+                    ) freq
+                    WHERE freq.cnt::float / LENGTH(digit_phone) > 0.6
                 )
             )
             SELECT :uid, digit_phone, 'phone', COUNT(*), 1, ARRAY[:uid]
