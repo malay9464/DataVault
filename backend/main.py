@@ -156,7 +156,8 @@ def is_valid_phone(digits: str) -> bool:
         return False
 
     # Rule 4: Not sequential
-    if digits in ("1234567890", "0123456789", "12345678", "123456789"):
+    if digits in ("1234567890", "0123456789", "12345678", "123456789", "1234567", 
+                  "123456", "0123456", "012345", "01234567", "12345678901234567890"):
         return False
 
     # Rule 5: Known fake numbers blacklist
