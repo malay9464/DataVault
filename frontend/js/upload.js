@@ -460,26 +460,40 @@ async function loadUserCategories(userId) {
 
     const wrapper = document.createElement("div");
     wrapper.id = "userCategoryBar";
-    wrapper.style.cssText = "padding:8px 0 4px 0;position:relative;";
+    wrapper.style.cssText = "display:flex;align-items:center;gap:8px;";
     wrapper.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;padding:0 0 8px 0;">
-            <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Sort by</span>
-            <div style="position:relative;flex:1;">
-                <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
-                    style="width:100%;max-width:400px;padding:7px 32px 7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-                        background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
-                        appearance:none;outline:none;">
-                    <option value="">All Categories</option>
-                    ${cats.map(c => {
-                        const displayName = c.name.length > 45 ? c.name.substring(0, 43) + '…' : c.name;
-                        return `<option value="${c.id}" title="${c.name}">${displayName} (${c.uploads})</option>`;
-                    }).join("")}
-                </select>
-            </div>
+        <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Sort by</span>
+        <div style="position:relative;">
+            <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
+                style="width:auto;max-width:220px;padding:8px 32px 8px 12px;border:1.5px solid #e2e8f0;border-radius:6px;
+                    background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
+                    appearance:none;outline:none;">
+                <option value="">All Categories</option>
+                ${cats.map(c => {
+                    const displayName = c.name.length > 35 ? c.name.substring(0, 33) + '…' : c.name;
+                    return `<option value="${c.id}" title="${c.name}">${displayName} (${c.uploads})</option>`;
+                }).join("")}
+            </select>
         </div>`;
 
-        const searchContainer = document.querySelector(".search-container");
-    if (searchContainer) searchContainer.parentNode.insertBefore(wrapper, searchContainer);
+    const sectionHeader = document.querySelector(".section-header");
+    if (sectionHeader) {
+        let rightContainer = sectionHeader.querySelector(".section-header-right");
+        if (!rightContainer) {
+            rightContainer = document.createElement("div");
+            rightContainer.className = "section-header-right";
+            rightContainer.style.cssText = "display:flex;align-items:center;gap:12px;";
+            const filtersBtn = sectionHeader.querySelector(".toggle-filters-btn");
+            if (filtersBtn) {
+                sectionHeader.appendChild(rightContainer);
+            }
+        }
+        const filtersBtn = sectionHeader.querySelector(".toggle-filters-btn");
+        if (filtersBtn && filtersBtn.parentNode === sectionHeader) {
+            rightContainer.appendChild(wrapper);
+            rightContainer.appendChild(filtersBtn);
+        }
+    }
 }
 
 function removeUserCategoryBar() {
