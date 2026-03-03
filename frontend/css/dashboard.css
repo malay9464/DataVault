@@ -414,19 +414,21 @@ body {
 .feed-filename {
     font-weight: 600;
     color: var(--text-primary);
-    max-width: 220px;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: inline-block;
 }
 
 .feed-user {
     color: var(--blue);
     font-weight: 500;
-    max-width: 160px;
+    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: inline-block;
 }
 
 .feed-num {
