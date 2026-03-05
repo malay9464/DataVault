@@ -1779,3 +1779,57 @@ td[data-full-number]:hover::before {
   .main { margin-left: 0; }
   .user-stats-bar { grid-template-columns: 1fr; }
 }
+
+/* ---------- SIDEBAR QUICK ACTIONS ---------- */
+.sidebar-quick-actions {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 12px;
+}
+
+.sidebar-quick-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #64748b;
+    padding: 0 4px;
+    margin-bottom: 6px;
+}
+
+.quick-action-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: #cbd5e1;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    margin-bottom: 2px;
+}
+
+.quick-action-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f1f5f9;
+    transform: translateX(3px);
+}
+
+.quick-action-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+}
+
+.quick-action-item:hover .quick-action-icon {
+    background: rgba(37, 99, 235, 0.4);
+    color: #93c5fd;
+}
