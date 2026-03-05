@@ -55,7 +55,7 @@
         </div>
 
         <hr>
-        <h3 id="sidebarSectionLabel">Categories</h3>
+        <h3 id="sidebarSectionLabel" style="display:none;">Categories</h3>
     </div>
 
     <div class="sidebar-scroll" id="categoryList"></div>
@@ -237,18 +237,27 @@
             <!-- Uploads Section -->
             <div class="uploads-section">
                 <div class="section-header">
-                    <h3>
+                    <h3 id="sectionHeading">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
                         </svg>
                         Recent Uploads
                     </h3>
-                    <button class="toggle-filters-btn" onclick="toggleAdvancedFilters()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                        </svg>
-                        Filters
-                    </button>
+                    <div class="toolbar-controls">
+                        <!-- Row 1: User dropdown + Filters button -->
+                        <div class="toolbar-row">
+                            <select id="userFilterDropdown" class="user-filter-select" style="display:none;" onchange="onUserDropdownChange(this)">
+                                <option value="">All Users</option>
+                            </select>
+                            <button class="toggle-filters-btn" onclick="toggleAdvancedFilters()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                                </svg>
+                                Filters
+                            </button>
+                        </div>
+                        <!-- Row 2: Category dropdown (hidden until user selected) -->
+                    </div>
                 </div>
 
                 <!-- Bulk Action Bar -->
@@ -265,12 +274,19 @@
                 </div>
 
                 <!-- Search Box -->
-                <div class="search-container">
-                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <path d="M21 21l-4.35-4.35"/>
-                    </svg>
-                    <input id="searchInput" placeholder="Search by filename..." class="search-input">
+                <div class="toolbar-row toolbar-row--search">
+                    <div class="search-container">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input id="searchInput" placeholder="Search by filename..." class="search-input">
+                    </div>
+                    <div id="categoryFilterRow" style="display:none;">
+                        <select id="adminCategoryFilter" class="user-filter-select category-filter-select" onchange="onAdminCategoryFilterChange(this)">
+                            <option value="">All Categories</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Advanced Filters -->

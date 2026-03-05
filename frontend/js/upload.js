@@ -422,83 +422,97 @@ async function loadAdminUserList() {
     const res = await authFetch("/admin/users-with-stats");
     if (!res || !res.ok) return;
     const users = await res.json();
-    categoryList.innerHTML = "";
 
+    // Update the total count badge
     let totalUploads = 0;
     users.forEach(u => totalUploads += u.upload_count);
     if (allCountSpan) allCountSpan.innerText = totalUploads;
 
-    if (users.length === 0) {
-        categoryList.innerHTML = `<div style="padding:12px;color:#94a3b8;font-size:13px;">No users found</div>`;
-        return;
+    // Populate toolbar dropdown only — no sidebar rendering
+    const dropdown = document.getElementById('userFilterDropdown');
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">All Users</option>';
+        users.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = `${u.email} (${u.upload_count})`;
+            dropdown.appendChild(opt);
+        });
+    }
+}
+
+function onUserDropdownChange(select) {
+    const userId = select.value ? parseInt(select.value) : null;
+    selectedUserId = userId;
+    selectedCategoryId = null;
+    currentFilter = 'all';
+    page = 1;
+    clearSelection();
+
+    // Reset and hide category filter row
+    const categoryFilterRow = document.getElementById('categoryFilterRow');
+    const adminCategoryFilter = document.getElementById('adminCategoryFilter');
+    if (categoryFilterRow) categoryFilterRow.style.display = 'none';
+    if (adminCategoryFilter) adminCategoryFilter.innerHTML = '<option value="">All Categories</option>';
+
+    document.querySelectorAll('.category').forEach(c => c.classList.remove('active'));
+    const allFilesBtn = document.querySelector('.category[onclick*="applyFilter"]');
+    if (allFilesBtn) allFilesBtn.classList.add('active');
+
+    const heading = document.querySelector('.section-header h3');
+    if (heading) {
+        if (!userId) {
+            heading.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> Recent Uploads`;
+        } else {
+            const email = select.options[select.selectedIndex].text;
+            heading.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${email}`;
+        }
     }
 
-    users.forEach(u => {
-        const div = document.createElement("div");
-        div.className = "category";
-        div.id = `user-item-${u.id}`;
-        const label = u.email.length > 22 ? u.email.substring(0, 20) + "…" : u.email;
-        div.innerHTML = `
-            <span onclick="filterByUser(${u.id}, this.parentElement)" title="${u.email}">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                </svg>
-                ${label}
-            </span>
-            <span class="count-badge">${u.upload_count}</span>`;
-        categoryList.appendChild(div);
-    });
+    if (userId) loadUserCategories(userId);
+    loadUploads();
+}
+
+function onAdminCategoryFilterChange(select) {
+    selectedCategoryId = select.value ? parseInt(select.value) : null;
+    page = 1;
+    loadUploads();
 }
 
 async function loadUserCategories(userId) {
     const res = await authFetch(`/categories?user_id=${userId}`);
     if (!res || !res.ok) return;
     const cats = await res.json();
-    removeUserCategoryBar();
-    if (cats.length === 0) return;
 
-    const wrapper = document.createElement("div");
-    wrapper.id = "userCategoryBar";
-    wrapper.style.cssText = "display:flex;align-items:center;gap:8px;";
-    wrapper.innerHTML = `
-        <span style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;">Sort by</span>
-        <div style="position:relative;">
-            <select id="adminCatDropdown" onchange="filterByCategoryDropdown(this)"
-                style="width:auto;max-width:220px;padding:8px 32px 8px 12px;border:1.5px solid #e2e8f0;border-radius:6px;
-                    background:#fff;color:#374151;font-size:13px;font-weight:500;cursor:pointer;
-                    appearance:none;outline:none;">
-                <option value="">All Categories</option>
-                ${cats.map(c => {
-                    const displayName = c.name.length > 35 ? c.name.substring(0, 33) + '…' : c.name;
-                    return `<option value="${c.id}" title="${c.name}">${displayName} (${c.uploads})</option>`;
-                }).join("")}
-            </select>
-        </div>`;
+    const row = document.getElementById('categoryFilterRow');
+    const select = document.getElementById('adminCategoryFilter');
 
-    const sectionHeader = document.querySelector(".section-header");
-    if (sectionHeader) {
-        let rightContainer = sectionHeader.querySelector(".section-header-right");
-        if (!rightContainer) {
-            rightContainer = document.createElement("div");
-            rightContainer.className = "section-header-right";
-            rightContainer.style.cssText = "display:flex;align-items:center;gap:12px;";
-            const filtersBtn = sectionHeader.querySelector(".toggle-filters-btn");
-            if (filtersBtn) {
-                sectionHeader.appendChild(rightContainer);
-            }
-        }
-        const filtersBtn = sectionHeader.querySelector(".toggle-filters-btn");
-        if (filtersBtn && filtersBtn.parentNode === sectionHeader) {
-            rightContainer.appendChild(wrapper);
-            rightContainer.appendChild(filtersBtn);
-        }
+    if (!row || !select) return;
+
+    if (cats.length === 0) {
+        row.style.display = 'none';
+        return;
     }
+
+    select.innerHTML = '<option value="">All Categories</option>';
+    cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name.length > 35 ? c.name.substring(0, 33) + '…' : c.name;
+        opt.title = c.name;
+        select.appendChild(opt);
+    });
+
+    row.style.display = 'flex';
 }
 
 function removeUserCategoryBar() {
     const existing = document.getElementById("userCategoryBar");
     if (existing) existing.remove();
+    const categoryFilterRow = document.getElementById('categoryFilterRow');
+    if (categoryFilterRow) categoryFilterRow.style.display = 'none';
+    const adminCategoryFilter = document.getElementById('adminCategoryFilter');
+    if (adminCategoryFilter) adminCategoryFilter.innerHTML = '<option value="">All Categories</option>';
 }
 
 function filterByCategoryDropdown(select) {
@@ -808,25 +822,29 @@ async function loadUser() {
     const divider        = document.querySelector(".divider");
     const dashBtn        = document.getElementById("dashboardBtn");
     const label          = document.getElementById("sidebarSectionLabel");
-    const relatedAllBtn = document.getElementById("relatedAllBtn");
+    const relatedAllBtn  = document.getElementById("relatedAllBtn");
+    const userDropdown   = document.getElementById("userFilterDropdown");
 
     if (currentUser.role === "admin") {
-        if (label)          label.textContent          = "Users";
+        if (label)          label.style.display          = "none";
         if (newCategoryBtn) newCategoryBtn.style.display = "none";
         if (addUserBtn)     addUserBtn.style.display     = "flex";
         if (manageUsersBtn) manageUsersBtn.style.display = "flex";
         if (uploadSection)  uploadSection.style.display  = "none";
         if (divider)        divider.style.display        = "none";
         if (dashBtn)        dashBtn.style.display        = "flex";
+        if (userDropdown)   userDropdown.style.display   = "block";
         document.querySelectorAll(".cat-actions").forEach(a => a.style.display = "none");
         const params = new URLSearchParams(window.location.search);
         if (params.get("view") === "dashboard") {
             showPanel("dashboard");
         }
     } else {
+        if (label)          label.style.display          = "block";
         if (dashBtn)        dashBtn.style.display        = "none";
-        if (addUserBtn)     addUserBtn.style.display      = "none";
-        if (manageUsersBtn) manageUsersBtn.style.display  = "none";
+        if (addUserBtn)     addUserBtn.style.display     = "none";
+        if (manageUsersBtn) manageUsersBtn.style.display = "none";
+        if (userDropdown)   userDropdown.style.display   = "none";
     }
 }
 
@@ -1499,9 +1517,18 @@ function clearUserFilter() {
     window.history.replaceState({}, "", url);
     document.getElementById("userFilterBanner")?.remove();
     selectedUserId = null;
+    selectedCategoryId = null;
+
+    // Reset dropdowns
+    const dropdown = document.getElementById('userFilterDropdown');
+    if (dropdown) dropdown.value = '';
+    const categoryFilterRow = document.getElementById('categoryFilterRow');
+    if (categoryFilterRow) categoryFilterRow.style.display = 'none';
+    const adminCategoryFilter = document.getElementById('adminCategoryFilter');
+    if (adminCategoryFilter) adminCategoryFilter.innerHTML = '<option value="">All Categories</option>';
+
     document.querySelectorAll(".category").forEach(c => c.classList.remove("active"));
 
-    // ── RESET HEADING ──
     const heading = document.querySelector(".section-header h3");
     if (heading) heading.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> Recent Uploads`;
 
