@@ -218,8 +218,8 @@ function renderTopUsersCharts(data) {
     destroyChart("topFiles");
     destroyChart("topRecords");
 
-    const sorted_files   = [...data].sort((a, b) => b.files - a.files).slice(0, 8);
-    const sorted_records = [...data].sort((a, b) => b.records - a.records).slice(0, 8);
+    const sorted_files   = [...data].sort((a, b) => b.files - a.files).slice(0, 5);
+    const sorted_records = [...data].sort((a, b) => b.records - a.records).slice(0, 5);
 
     const barOpts = (labelText) => ({
         responsive: true,
@@ -295,7 +295,7 @@ function renderDupRateChart(data) {
     const sorted = [...data]
         .filter(u => u.files > 0)
         .sort((a, b) => b.avg_dup_rate - a.avg_dup_rate)
-        .slice(0, 8);
+        .slice(0, 5);
 
     charts.dupRate = new Chart(
         document.getElementById("dupRateChart").getContext("2d"),
